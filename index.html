@@ -345,84 +345,80 @@ function rebuildCharacterVisual(rig, ghost){
   rig.userData.visual=vis; rig.add(vis);
 }
 
-/* -------------------- Voxel environment builders -------------------- */
-function buildTree(){
-  const g=new THREE.Group();
-  const trunk=box(0.32,0.8,0.32,0x8a6a4a); trunk.position.y=0.4; g.add(trunk);
-  const pal = Math.random()<0.5?[0xffc9c2,0xffb0c4]:[0xd3b8f0,0xc2a6e8];
+/* =========================================================================
+   IMAGE RESOURCES — every obstacle / item / prop is a camera-facing billboard
+   loaded from the GitHub resources folder. Ground lanes stay as geometry
+   (there is no ground texture image). Voxel builders below are the offline
+   fallback used until an image loads or if the network fails.
+   ========================================================================= */
+const IMG_ENV = {
+  tree:      ['고목01.png','고목02.png','고목03.png','고목04.png','고목05.png','고목06.png'],
+  rock:      ['바위01.png','바위02.png','바위03.png','바위04.png','바위05.png'],
+  palanquin: ['Gama 1.png','Gama 2.png','Gama 3.png','Gama 4.png'],
+  guard:     ['근위병.png'],
+  turtle:    ['거북 신령01.png','거북 신령02.png','거북 신령03.png'],
+  gate:      ['결승 궁궐 문.png'],
+  eagle:     ['독수리01.png'],
+  tteok:     ['ssotoek.png','붕어빵.png','십원빵.png'],
+  chili:     ['고추01.png','고추03.png','고추04.png'],
+  giant:     ['부적01.png','부적02.png','부적03.png'],
+};
+const TEX = {};   // key -> [{tex,aspect}, ...]
+function loadEnvResources(){
+  for(const key in IMG_ENV){ TEX[key]=[];
+    IMG_ENV[key].forEach(f=>{ const img=new Image(); img.crossOrigin='anonymous';
+      img.onload=()=>{ try{ const cv=chromaKeyTrim(img); const t=new THREE.CanvasTexture(cv);
+        t.magFilter=THREE.LinearFilter; t.minFilter=THREE.LinearFilter; t.generateMipmaps=false;
+        TEX[key].push({ tex:t, aspect:cv.width/cv.height }); }catch(e){} };
+      img.onerror=()=>{}; img.src=GITHUB_CONFIG.baseUrl+encodeURIComponent(f); });
+  }
+}
+function pickTex(key,variant){ const a=TEX[key]; if(!a||!a.length) return null; return a[(variant!=null?variant:(Math.random()*a.length|0))%a.length]; }
+// image billboard entity (+ soft ground shadow); falls back to voxel geometry
+function makeBillboard(key, h, opt){
+  opt=opt||{}; const g=new THREE.Group(); const r=pickTex(key,opt.variant);
+  if(r){ const w=h*r.aspect;
+    const m=new THREE.MeshBasicMaterial({ map:r.tex, transparent:true, alphaTest:0.35, side:THREE.DoubleSide, depthWrite:true,
+      color:opt.color||0xffffff, opacity:opt.opacity!==undefined?opt.opacity:1 });
+    const plane=new THREE.Mesh(new THREE.PlaneGeometry(w,h), m); plane.position.y=h/2;
+    g.add(plane); g.userData.bb=plane; g.userData.w=w;
+    if(!opt.noShadow){ const sh=new THREE.Mesh(GEO.circle, new THREE.MeshBasicMaterial({ color:0x3a2f4a, transparent:true, opacity:0.2, depthWrite:false }));
+      sh.rotation.x=-Math.PI/2; sh.scale.set(Math.min(w*0.42,1.2), h*0.16, 1); sh.position.y=0.03; g.add(sh); }
+  } else if(opt.fallback){ opt.fallback(g); }
+  return g;
+}
+
+/* -------------------- Voxel fallbacks (populate a group) -------------------- */
+function vxTree(g){ const trunk=box(0.32,0.8,0.32,0x8a6a4a); trunk.position.y=0.4; g.add(trunk);
+  const pal=Math.random()<0.5?[0xffc9c2,0xffb0c4]:[0xd3b8f0,0xc2a6e8];
   const l1=box(1.05,0.8,1.05,pal[0]); l1.position.y=1.1; g.add(l1);
-  const l2=box(0.75,0.7,0.75,pal[1]); l2.position.y=1.7; g.add(l2);
-  return g;
-}
-function buildRock(){
-  const g=new THREE.Group();
-  const r1=box(0.9,0.7,0.9,0xc3c0d2); r1.position.set(0,0.35,0); g.add(r1);
-  const r2=box(0.5,0.4,0.5,0xd7d4e4); r2.position.set(0.16,0.75,0.1); g.add(r2);
-  return g;
-}
-function buildHanok(){
-  const g=new THREE.Group();
-  const wall=box(1.5,1.0,1.2,0xf5ecd8); wall.position.y=0.5; g.add(wall);
-  const door=box(0.5,0.6,0.05,0x9a6a4a); door.position.set(0,0.4,0.61); g.add(door);
-  const roof1=box(2.1,0.35,1.7,0xb7a6e0); roof1.position.y=1.15; g.add(roof1);
-  const roof2=box(1.6,0.35,1.3,0xc9bcec); roof2.position.y=1.48; g.add(roof2);
-  const ridge=box(2.2,0.14,0.2,0x9d8ac8); ridge.position.y=1.66; g.add(ridge);
-  return g;
-}
-function buildPalanquin(){
-  const g=new THREE.Group();
-  const body=box(1.4,0.95,1.0,0xff9aa2); body.position.y=0.9; g.add(body);
+  const l2=box(0.75,0.7,0.75,pal[1]); l2.position.y=1.7; g.add(l2); }
+function vxRock(g){ const r1=box(0.9,0.7,0.9,0xc3c0d2); r1.position.set(0,0.35,0); g.add(r1);
+  const r2=box(0.5,0.4,0.5,0xd7d4e4); r2.position.set(0.16,0.75,0.1); g.add(r2); }
+function vxPalanquin(g){ const body=box(1.4,0.95,1.0,0xff9aa2); body.position.y=0.9; g.add(body);
   const roof=box(1.7,0.35,1.2,0xb7a6e0); roof.position.y=1.5; g.add(roof);
-  const knob=box(0.2,0.25,0.2,0xffd36e); knob.position.y=1.75; g.add(knob);
-  const win=box(0.55,0.45,1.02,0x8ec7e8); win.position.y=0.95; g.add(win);
-  const p1=box(2.3,0.12,0.12,0xcaa27a); p1.position.set(0,0.75,0.36); g.add(p1);
-  const p2=box(2.3,0.12,0.12,0xcaa27a); p2.position.set(0,0.75,-0.36); g.add(p2);
-  return g;
-}
-function buildGuard(){
-  const g=new THREE.Group();
-  const legs=box(0.42,0.4,0.42,0x8a7fb0); legs.position.y=0.2; g.add(legs);
-  const body=box(0.55,0.6,0.5,0xff8f88); body.position.y=0.7; g.add(body);
+  const p1=box(2.3,0.12,0.12,0xcaa27a); p1.position.set(0,0.75,0.36); g.add(p1); }
+function vxGuard(g){ const body=box(0.55,0.6,0.5,0xff8f88); body.position.y=0.7; g.add(body);
   const head=box(0.44,0.44,0.44,0xffe0c4); head.position.y=1.18; g.add(head);
-  const hat=box(0.6,0.2,0.6,0x9d8ac8); hat.position.y=1.45; g.add(hat);
-  const feather=box(0.1,0.35,0.1,0xff9ac4); feather.position.y=1.68; g.add(feather);
-  const spear=box(0.1,1.5,0.1,0xcaa27a); spear.position.set(0.36,0.95,0); g.add(spear);
-  return g;
-}
-function buildTurtle(){
-  const g=new THREE.Group();
-  const shell=box(1.6,0.4,1.0,0x8fe0c0); shell.position.y=0.2; g.add(shell);
-  const dome=box(1.1,0.32,0.7,0xa8ecd4); dome.position.y=0.46; g.add(dome);
-  const head=box(0.34,0.34,0.4,0xbff0dd); head.position.set(0.9,0.2,0); g.add(head);
-  const e1=box(0.28,0.2,0.28,0x8fe0c0); e1.position.set(0.4,0.05,0.42); g.add(e1);
-  const e2=box(0.28,0.2,0.28,0x8fe0c0); e2.position.set(-0.4,0.05,0.42); g.add(e2);
-  return g;
-}
-function buildLotus(){
-  const g=new THREE.Group();
-  const pad=box(1.0,0.08,1.0,0x8fd6a8,{noShadow:true}); pad.position.y=0.05; g.add(pad);
-  const f=box(0.4,0.28,0.4,0xff9ac4); f.position.y=0.24; g.add(f);
-  const f2=box(0.2,0.2,0.2,0xffd9ec); f2.position.y=0.42; g.add(f2);
-  return g;
-}
-function buildGate(){
-  const g=new THREE.Group();
-  const c1=box(0.7,4,0.7,0xff9aa2); c1.position.set(-2.6,2,0); g.add(c1);
+  const hat=box(0.6,0.2,0.6,0x9d8ac8); hat.position.y=1.45; g.add(hat); }
+function vxTurtle(g){ const shell=box(1.6,0.4,1.0,0x8fe0c0); shell.position.y=0.2; g.add(shell);
+  const dome=box(1.1,0.32,0.7,0xa8ecd4); dome.position.y=0.46; g.add(dome); }
+function vxGate(g){ const c1=box(0.7,4,0.7,0xff9aa2); c1.position.set(-2.6,2,0); g.add(c1);
   const c2=box(0.7,4,0.7,0xff9aa2); c2.position.set(2.6,2,0); g.add(c2);
-  const top=box(6.6,0.9,1.3,0xb7a6e0); top.position.set(0,4.2,0); g.add(top);
-  const roof=box(7.4,0.5,1.7,0x9d8ac8); roof.position.set(0,4.9,0); g.add(roof);
-  const plq=box(1.6,0.7,0.1,0xfff2c0); plq.position.set(0,3.1,0.5); g.add(plq);
-  return g;
-}
-function buildEagle(){
-  const g=new THREE.Group();
-  const body=box(1,0.6,1.4,0xb79a86); body.position.y=0; g.add(body);
+  const top=box(6.6,0.9,1.3,0xb7a6e0); top.position.set(0,4.2,0); g.add(top); }
+function vxEagle(g){ const body=box(1,0.6,1.4,0xb79a86); g.add(body);
   const wl=box(1.6,0.15,1,0xcbb6a2); wl.position.set(-1.2,0,0); g.add(wl);
   const wr=box(1.6,0.15,1,0xcbb6a2); wr.position.set(1.2,0,0); g.add(wr);
-  const head=box(0.5,0.5,0.5,0xf4f0ea); head.position.set(0,0.2,0.8); g.add(head);
-  const beak=box(0.2,0.2,0.3,0xffd36e); beak.position.set(0,0.1,1.15); g.add(beak);
-  g.userData.wl=wl; g.userData.wr=wr; return g;
-}
+  g.userData.wl=wl; g.userData.wr=wr; }
+
+/* -------------------- Public builders (image billboard + fallback) -------------------- */
+function buildTree(){ return makeBillboard('tree',2.3,{fallback:vxTree}); }
+function buildRock(){ return makeBillboard('rock',1.05,{fallback:vxRock}); }
+function buildPalanquin(){ return makeBillboard('palanquin',1.9,{fallback:vxPalanquin}); }
+function buildGuard(){ return makeBillboard('guard',1.6,{fallback:vxGuard}); }
+function buildTurtle(){ return makeBillboard('turtle',1.2,{fallback:vxTurtle}); }
+function buildGate(){ return makeBillboard('gate',4.6,{noShadow:true,fallback:vxGate}); }
+function buildEagle(){ return makeBillboard('eagle',1.8,{noShadow:true,fallback:vxEagle}); }
 
 /* -------------------- Particles (3D voxel) -------------------- */
 const particles=[]; const MAX_PARTICLES=240;
@@ -504,35 +500,34 @@ function makeLane(row){
   } else {
     for(let x=-RENDER_HALF;x<=RENDER_HALF;x++){ const t=box(1,0.5,1,baseColor,{noShadow:true}); t.receiveShadow=true; t.position.set(x,-0.25,0); g.add(t); lane.tiles.push(t); }
   }
-  if(type==='gate'){ const gate=buildGate(); g.add(gate); }
+  if(type==='gate'){ const gate=buildGate(); g.add(gate); lane.gateGroup=gate; }
 
   if(type==='grass' && row>4){
     const density=currentGameMode==='timeattack'?0.16:0.2; let used=0;
     for(let x=COL_MIN;x<=COL_MAX;x++){
       const rr=currentGameMode==='timeattack'?rowRand(row,x*7+3):Math.random();
       if(rr<density && used<(COL_MAX-COL_MIN-1)){ used++;
-        const roll=(currentGameMode==='timeattack'?rowRand(row,x*13):Math.random());
-        const kind = roll<0.5?'tree':(roll<0.8?'rock':'hanok');
-        const obs = kind==='tree'?buildTree():kind==='rock'?buildRock():buildHanok();
+        const kind = (currentGameMode==='timeattack'?rowRand(row,x*13):Math.random())<0.6?'tree':'rock';
+        const obs = kind==='tree'?buildTree():buildRock();
         obs.position.set(x,0,0); g.add(obs); lane.statics[x]={ kind, group:obs, solid:true };
       }
     }
-    // border trees
     [-RENDER_HALF+1, RENDER_HALF-1].forEach(x=>{ if(x>COL_MAX||x<COL_MIN){ const t=buildTree(); t.position.set(x,0,0); g.add(t); } });
   }
   if(type==='road'){
     const dir=(rowRand(row,5)<0.5)?1:-1; lane.dir=dir; lane.speed=1.5+rowRand(row,9)*1.9;
     const count=2+Math.floor(rowRand(row,11)*2); const gap=(2*RENDER_HALF+2)/count;
     for(let i=0;i<count;i++){ const isPal=rowRand(row,i*3)<0.5; const mob=isPal?buildPalanquin():buildGuard();
-      mob.position.set(-RENDER_HALF-1+i*gap+rowRand(row,i*7)*1.5,0,0); if(dir<0) mob.rotation.y=Math.PI; g.add(mob);
-      lane.mobs.push({ model:mob, kind:isPal?'palanquin':'guard', w:isPal?1.6:0.95, dead:false }); }
+      mob.position.set(-RENDER_HALF-1+i*gap+rowRand(row,i*7)*1.5,0,0);
+      if(dir<0){ if(mob.userData.bb) mob.userData.bb.scale.x=-1; else mob.rotation.y=Math.PI; }
+      g.add(mob); lane.mobs.push({ model:mob, kind:isPal?'palanquin':'guard', w:isPal?1.6:0.95, dead:false }); }
   }
   if(type==='water'){
     const dir=(rowRand(row,7)<0.5)?1:-1; lane.dir=dir; lane.speed=1.0+rowRand(row,3)*0.9;
     const count=4+Math.floor(rowRand(row,4)*2); const gap=(2*RENDER_HALF+2)/count;
-    for(let i=0;i<count;i++){ const t=buildTurtle(); t.position.set(-RENDER_HALF-1+i*gap+rowRand(row,i*5)*1.2,0,0); g.add(t);
+    for(let i=0;i<count;i++){ const t=buildTurtle(); t.position.set(-RENDER_HALF-1+i*gap+rowRand(row,i*5)*1.2,0,0);
+      if(dir<0 && t.userData.bb) t.userData.bb.scale.x=-1; g.add(t);
       lane.mobs.push({ model:t, kind:'turtle', w:1.6, dead:false }); }
-    for(let i=0;i<2;i++){ const lo=buildLotus(); lo.position.set(-4+i*8+rowRand(row,i*9)*3,0,0.2); g.add(lo); }
   }
   // item balancer
   if(row>ITEM_SAFE_ROWS && type!=='water' && type!=='gate'){
@@ -545,13 +540,10 @@ function makeLane(row){
   scene.add(g); return lane;
 }
 function spawnItem(parent,x,kind){
-  const grp=new THREE.Group();
-  if(kind==='tteok'){ const b=box(0.42,0.42,0.42,0xfff2f6,{emissive:0x553344}); b.position.y=0.62; grp.add(b);
-    const s=box(0.44,0.1,0.44,0xff9aa2); s.position.y=0.62; grp.add(s); }
-  else if(kind==='chili'){ const b=box(0.22,0.55,0.22,0xe5484d,{emissive:0x551111}); b.position.y=0.6; b.rotation.z=0.3; grp.add(b);
-    const st=box(0.12,0.16,0.12,0x5fae74); st.position.set(-0.08,0.86,0); grp.add(st); }
-  else { const b=box(0.5,0.5,0.15,0xffd36e,{emissive:0x554400}); b.position.y=0.65; grp.add(b);
-    const t=box(0.3,0.3,0.2,0xe5484d); t.position.set(0,0.65,0.02); t.rotation.z=Math.PI/4; grp.add(t); }
+  const fb = kind==='tteok' ? g=>{ const b=box(0.42,0.42,0.42,0xfff2f6,{emissive:0x553344}); b.position.y=0.62; g.add(b); const s=box(0.44,0.1,0.44,0xff9aa2); s.position.y=0.62; g.add(s); }
+    : kind==='chili' ? g=>{ const b=box(0.22,0.55,0.22,0xe5484d,{emissive:0x551111}); b.position.y=0.6; g.add(b); const st=box(0.12,0.16,0.12,0x5fae74); st.position.set(-0.08,0.86,0); g.add(st); }
+    : g=>{ const b=box(0.5,0.5,0.15,0xffd36e,{emissive:0x554400}); b.position.y=0.65; g.add(b); };
+  const grp=makeBillboard(kind, 0.95, { noShadow:true, fallback:fb });
   grp.position.set(x,0,0); parent.add(grp); return { kind, group:grp, taken:false };
 }
 
@@ -648,11 +640,22 @@ function updateRiding(){ if(!P.ridingTurtle) return; const m=P.ridingTurtle; if(
   P.worldX=m.model.position.x; P.gridX=Math.round(P.worldX);
   if(P.worldX>RENDER_HALF+0.5||P.worldX<-RENDER_HALF-0.5){ if(run.stealthTimer<=0&&!feverActive) die('drown'); } }
 function updateDecor(dt){ for(const k in lanes){ const lane=lanes[k];
-  for(const x in lane.items){ const it=lane.items[x]; if(it&&it.group){ it.group.rotation.y+=dt*2; it.group.position.y=Math.sin(run.elapsed*3+(+x))*0.08; } }
+  for(const x in lane.items){ const it=lane.items[x]; if(it&&it.group){ it.group.position.y=0.12+Math.sin(run.elapsed*3+(+x))*0.1; } }
   if(lane.tiles.length){ if(feverActive){ const c=new THREE.Color().setHSL((run.elapsed*0.3+lane.row*0.05)%1,0.6,0.75);
     for(const t of lane.tiles) t.material.color.copy(c); lane._ft=true; }
     else if(lane._ft){ for(const t of lane.tiles) t.material.color.setHex(lane.baseColor); lane._ft=false; } } } }
 function billboardFace(rig){ const vis=rig.userData.visual; if(vis&&vis.userData.billboard) vis.quaternion.copy(camera.quaternion); }
+// keep every image-billboard (trees, rocks, palanquins, guards, turtles, items, gate, eagle) facing the camera
+function updateBillboards(){
+  const q=camera.quaternion;
+  for(const k in lanes){ const L=lanes[k];
+    if(L.gateGroup && L.gateGroup.userData.bb) L.gateGroup.userData.bb.quaternion.copy(q);
+    for(const m of L.mobs){ if(!m.dead && m.model.userData.bb) m.model.userData.bb.quaternion.copy(q); }
+    for(const x in L.statics){ const s=L.statics[x]; if(s.group.userData.bb) s.group.userData.bb.quaternion.copy(q); }
+    for(const x in L.items){ const it=L.items[x]; if(!it.taken && it.group.userData.bb) it.group.userData.bb.quaternion.copy(q); }
+  }
+  if(run.eagle && run.eagle.model.userData.bb) run.eagle.model.userData.bb.quaternion.copy(q);
+}
 function updatePlayerAnim(dt){
   if(P.jumping){ P.jT+=dt; const k=Math.min(1,P.jT/P.jDur); P.worldX=P.fromX+(P.toX-P.fromX)*k; P.worldZ=P.fromZ+(P.toZ-P.fromZ)*k;
     P.hop=Math.sin(k*Math.PI)*0.6; if(k>=1) finishJump(); }
@@ -705,7 +708,7 @@ let clock;
 function animate(){ requestAnimationFrame(animate); const dt=Math.min(0.05, clock.getDelta());
   if(gameState===State.PLAYING){ run.elapsed+=dt; ensureLanes(); updateTimers(dt); updateMobs(dt);
     if(!P.jumping) updateRiding(); updatePlayerAnim(dt); updateWillo(); if(currentGameMode==='ghost') updateGhost();
-    updateDecor(dt); checkLose(dt); updateCamera(dt); updateEagle(dt); run.score=run.maxRow; updateHUD(); }
+    updateDecor(dt); checkLose(dt); updateCamera(dt); updateEagle(dt); updateBillboards(); run.score=run.maxRow; updateHUD(); }
   updateParticles(dt); if(renderer) renderer.render(scene,camera);
 }
 
@@ -794,7 +797,7 @@ function drawMascotFallback(){ const c=document.createElement('canvas'); c.width
   g.fillStyle='#2a2540'; g.fillRect(24,26,6,6); g.fillRect(36,26,6,6); el('mascot').src=c.toDataURL('image/png'); }
 
 /* -------------------- Boot -------------------- */
-function boot(){ initThree(); clock=new THREE.Clock(); bindInput(); drawMascotFallback(); loadCharacter();
+function boot(){ initThree(); clock=new THREE.Clock(); bindInput(); drawMascotFallback(); loadCharacter(); loadEnvResources();
   showScreen('menu'); el('menu-tteok').textContent=store.tteok;
   const unlock=()=>{ sfx.init(); window.removeEventListener('pointerdown',unlock); }; window.addEventListener('pointerdown',unlock);
   animate();
