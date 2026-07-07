@@ -432,10 +432,17 @@ function loadTexture(url){
   texCache[url] = t;
   return t;
 }
+// Resolve an asset KEY to a texture + its natural aspect ratio (w/h).
+// Prefers a processed GitHub texture (white bg keyed out, auto-cropped);
+// otherwise falls back to the built-in generated pixel-art data-URI.
+function texAndAspect(key){
+  if(RES_TEX[key]) return { tex: RES_TEX[key], aspect: RES_ASPECT[key]||1 };
+  return { tex: loadTexture(ASSETS[key]), aspect: FALLBACK_ASPECT[key]||1 };
+}
 // flat 2D billboard sprite; anchored at its bottom-centre so "feet" sit on ground
-function makeSprite(url, w, h, opts={}){
+function makeSprite(key, w, h, opts={}){
   const m = new THREE.SpriteMaterial({
-    map: loadTexture(url),
+    map: texAndAspect(key).tex,
     transparent: true,
     alphaTest: 0.2,          // cutout transparent texels (crisp edges), keep translucency
     depthWrite: true,        // sizeAttenuation stays true -> world-unit sprites (ortho = no perspective shrink)
@@ -458,16 +465,21 @@ function makeShadow(rx){
   mesh.renderOrder = -1;
   return mesh;
 }
-// a billboard entity = sprite + its own ground shadow, grouped together
-function makeSpriteEntity(url, w, h, opts={}){
+// a billboard entity = sprite + its own ground shadow, grouped together.
+// `key` is an ASSETS/RES key; width is derived from the art's aspect ratio so
+// GitHub images (any proportion) are never stretched.
+function makeSpriteEntity(key, targetH, opts={}){
+  const aspect = texAndAspect(key).aspect;
+  const w = (opts.w!==undefined) ? opts.w : targetH*aspect;
+  const h = targetH;
   const g = new THREE.Group();
-  const shadow = makeShadow(opts.shadowR!==undefined?opts.shadowR : w*0.42);
+  const shadow = makeShadow(opts.shadowR!==undefined?opts.shadowR : Math.min(w*0.42, 0.95));
   shadow.position.y = 0.04;
   g.add(shadow);
-  const sp = makeSprite(url, w, h, opts);
+  const sp = makeSprite(key, w, h, opts);
   sp.position.y = 0.04;
   g.add(sp);
-  g.userData = { sprite:sp, shadow, baseW:w, baseH:h, groundY:0.04, shadowRX:shadow.scale.x, shadowRZ:shadow.scale.y, facing:1 };
+  g.userData = { sprite:sp, shadow, baseW:w, baseH:h, groundY:0.04, shadowRX:shadow.scale.x, shadowRZ:shadow.scale.y, facing:1, key };
   return g;
 }
 // hop animation shared by player + ghost: sprite rises, shadow stays & shrinks
@@ -617,72 +629,117 @@ function drawRock(){ // 바위 (boulder)
   },1);
 }
 
-// Built-in assets (generated at boot). Replace any value with your own PNG.
+// Built-in generated fallbacks (data-URIs) + their aspect ratios (w/h).
 const ASSETS = {};
+const FALLBACK_ASPECT = {
+  hero:56/74, tteok:30/34, bungeoppang:30/34, chili:28/34, giant:28/34,
+  guard:40/58, palanquin:64/52, turtle:64/34, tree:44/58, rock:44/36,
+};
 const heroTexCache = {};
-let heroFromResource = false;
 function heroUrlFor(skin){
-  if(heroFromResource && ASSETS.hero) return ASSETS.hero;   // use the supplied PNG for every skin
   if(!heroTexCache[skin.id]) heroTexCache[skin.id] = drawHero(skin);
   return heroTexCache[skin.id];
 }
 function buildAssets(){
-  ASSETS.tteok     = drawTteok();
-  ASSETS.chili     = drawChili();
-  ASSETS.giant     = drawGiant();
-  ASSETS.guard     = drawGuard();
-  ASSETS.palanquin = drawPalanquin();
-  ASSETS.turtle    = drawTurtle();
-  ASSETS.tree      = drawTree();
-  ASSETS.rock      = drawRock();
-  ASSETS.hero      = heroUrlFor(SKINS[0]);
+  ASSETS.tteok       = drawTteok();
+  ASSETS.bungeoppang = drawTteok();     // fallback shares the tteok icon
+  ASSETS.chili       = drawChili();
+  ASSETS.giant       = drawGiant();
+  ASSETS.guard       = drawGuard();
+  ASSETS.palanquin   = drawPalanquin();
+  ASSETS.turtle      = drawTurtle();
+  ASSETS.tree        = drawTree();
+  ASSETS.rock        = drawRock();
+  ASSETS.hero        = heroUrlFor(SKINS[0]);
 }
 
-/* -------------------- Optional PNG overrides from the /resources folder -----
-   Drop PNG files into  resources/  next to index.html using these exact names
-   and they replace the built-in sprites automatically. Anything missing keeps
-   its generated fallback, so the game always runs.
-     resources/hero.png       — main character (calico cat in hanbok)
-     resources/ghost.png       — (optional) ghost racer; if absent, hero.png is
-                                  reused tinted luminous blue
-     resources/tteok.png  resources/chili.png  resources/giant.png
-     resources/guard.png  resources/palanquin.png  resources/turtle.png
-     resources/tree.png   resources/rock.png
-   NOTE: external PNGs only load when the page is served over http(s) — e.g.
-   GitHub Pages. When opened as a local file (file://), browsers block WebGL
-   textures loaded from disk, so the embedded sprites are used instead; to use
-   your art locally, paste its base64 into ASSETS above.
-   --------------------------------------------------------------------------- */
-const RESOURCE_DIR = 'resources/';
-const RESOURCE_FILES = {
-  hero:'hero.png', ghost:'ghost.png', tteok:'tteok.png', chili:'chili.png',
-  giant:'giant.png', guard:'guard.png', palanquin:'palanquin.png',
-  turtle:'turtle.png', tree:'tree.png', rock:'rock.png',
+/* =========================================================================
+   GitHub resource loading  (real pixel-art PNGs from the repo)
+   -------------------------------------------------------------------------
+   The uploaded PNGs have solid WHITE backgrounds and small, off-centre art,
+   so each one is: fetched from raw.githubusercontent.com (CORS-enabled) ->
+   white background flood-filled to transparent -> auto-cropped to the art's
+   bounding box -> turned into a NearestFilter CanvasTexture. Anything that
+   fails to load keeps its generated fallback, so the game always runs.
+   Because raw.githubusercontent.com sends Access-Control-Allow-Origin:*, this
+   works even when index.html is opened directly (file://).
+   ========================================================================= */
+const GH_BASE = 'https://raw.githubusercontent.com/isabella9402/mini-game/main/resources/';
+const GH_FILES = {
+  hero:'main character.png',
+  tteok:'ssotoek.png',
+  bungeoppang:'붕어빵.png',
+  gama1:'Gama 1.png', gama2:'Gama 2.png', gama3:'Gama 3.png', gama4:'Gama 4.png',
 };
-function loadResourceOverrides(){
-  if(location.protocol === 'file:') return;   // file:// can't use external textures safely
-  Object.keys(RESOURCE_FILES).forEach(key=>{
-    const url = RESOURCE_DIR + RESOURCE_FILES[key];
+const RES_TEX = {};      // key -> processed THREE.CanvasTexture
+const RES_ASPECT = {};   // key -> trimmed aspect (w/h)
+const RES_CANVAS = {};   // key -> trimmed canvas (for the menu mascot)
+
+// remove connected white background + crop to content bounding box
+function chromaKeyTrim(img){
+  const w=img.width, h=img.height;
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  const cx=c.getContext('2d'); cx.imageSmoothingEnabled=false; cx.drawImage(img,0,0);
+  const id=cx.getImageData(0,0,w,h), d=id.data;
+  const isBg=i=> d[i]>232 && d[i+1]>232 && d[i+2]>232;   // near-white
+  const seen=new Uint8Array(w*h);
+  const stack=[];
+  for(let px=0;px<w;px++){ stack.push(px, (h-1)*w+px); }
+  for(let py=0;py<h;py++){ stack.push(py*w, py*w+(w-1)); }
+  while(stack.length){
+    const idx=stack.pop(); if(seen[idx]) continue;
+    const i=idx*4; if(!isBg(i)) continue;
+    seen[idx]=1; d[i+3]=0;
+    const px=idx%w, py=(idx-px)/w;
+    if(px+1<w) stack.push(idx+1);
+    if(px-1>=0) stack.push(idx-1);
+    if(py+1<h) stack.push(idx+w);
+    if(py-1>=0) stack.push(idx-w);
+  }
+  cx.putImageData(id,0,0);
+  // bounding box of remaining opaque pixels
+  let minx=w,miny=h,maxx=0,maxy=0,found=false;
+  for(let py=0;py<h;py++) for(let px=0;px<w;px++){
+    if(d[(py*w+px)*4+3]>16){ found=true;
+      if(px<minx)minx=px; if(px>maxx)maxx=px; if(py<miny)miny=py; if(py>maxy)maxy=py; }
+  }
+  if(!found){ minx=0;miny=0;maxx=w-1;maxy=h-1; }
+  const tw=maxx-minx+1, th=maxy-miny+1;
+  const out=document.createElement('canvas'); out.width=tw; out.height=th;
+  out.getContext('2d').drawImage(c, minx,miny,tw,th, 0,0,tw,th);
+  return out;
+}
+function loadGitHubResources(){
+  Object.keys(GH_FILES).forEach(key=>{
+    const url = GH_BASE + encodeURIComponent(GH_FILES[key]);
     const img = new Image();
+    img.crossOrigin = 'anonymous';               // needed to read pixels + WebGL-clean
     img.onload = ()=>{
-      ASSETS[key] = url;
-      delete texCache[url];                    // ensure it loads via NearestFilter loader
-      if(key==='hero'){ heroFromResource = true; drawMascot(); }
+      try{
+        const canvas = chromaKeyTrim(img);
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+        tex.generateMipmaps = false;
+        RES_TEX[key] = tex;
+        RES_ASPECT[key] = canvas.width/canvas.height;
+        RES_CANVAS[key] = canvas;
+        if(key==='hero') drawMascot();
+      }catch(e){ /* keep fallback */ }
     };
-    img.onerror = ()=>{};                       // keep the built-in fallback
+    img.onerror = ()=>{};                          // keep the built-in fallback
     img.src = url;
   });
 }
 
 /* -------------------- Character builder (2D sprite billboard) -------------------- */
-// The hero is a flat pixel-art PNG (calico cat in hanbok) shown as a THREE.Sprite
-// with its own ground shadow. Ghost mode reuses the same art tinted luminous blue.
+// The hero is the pixel-art cat PNG shown as a THREE.Sprite with a ground shadow.
+// Ghost mode reuses the same art tinted luminous blue and translucent.
 function buildDokkaebi(skin, ghost=false){
-  const hasGhostArt = ghost && ASSETS.ghost;      // dedicated ghost.png supplied?
-  const url = hasGhostArt ? ASSETS.ghost : heroUrlFor(skin);
-  const g = makeSpriteEntity(url, 1.35, 1.78, {
-    shadowR: 0.5,
-    color: (ghost && !hasGhostArt) ? 0x7fb0ff : undefined,   // tint reused hero art blue
+  // real GitHub cat art is one fixed sprite; only the generated fallback recolours per skin
+  if(!RES_TEX.hero) ASSETS.hero = heroUrlFor(skin);
+  const g = makeSpriteEntity('hero', 1.95, {
+    color: ghost ? 0x7fb0ff : undefined,
     opacity: ghost ? 0.55 : 1,
   });
   g.userData.skin = skin;
@@ -747,12 +804,14 @@ function burstSparkle(x,z,color,count){
 }
 function motionTrail(x,y,z,facing){
   // fading translucent copy of the hero sprite (dodge / dash trail)
-  const m = new THREE.SpriteMaterial({ map: loadTexture(ASSETS.hero), transparent:true,
+  const ta = texAndAspect('hero');
+  const m = new THREE.SpriteMaterial({ map: ta.tex, transparent:true,
     opacity:0.4, depthWrite:false, color:0x9fd0ff });
   m._noCache = true;
   const s = new THREE.Sprite(m);
   s.center.set(0.5,0);
-  s.scale.set(1.35*(facing||1), 1.78, 1);
+  const h = 1.95, w = h*ta.aspect;
+  s.scale.set(w*(facing||1), h, 1);
   s.position.set(x, y+0.04, z);
   scene.add(s);
   particles.push({ mesh:s, vx:0,vy:0,vz:0, gravity:0, life:0.16, maxLife:0.16, spin:0, shrink:false });
@@ -864,20 +923,6 @@ function makeLane(row){
         const t=buildTree(); t.position.set(x,0,0); g.add(t);
       }
     });
-    // tteok pickups (rice cakes) sometimes
-    for(let x=COL_MIN;x<=COL_MAX;x++){
-      if(lane.statics[x]) continue;
-      const rr = Math.random();
-      if(rr<0.10){
-        lane.items[x] = spawnItem(g, x, 'tteok');
-      } else if(currentGameMode==='timeattack' && rr<0.16){
-        lane.items[x] = spawnItem(g, x, 'chili');
-      } else if(currentGameMode!=='timeattack' && rr<0.135){
-        lane.items[x] = spawnItem(g, x, 'chili');
-      } else if(rr<0.145){
-        lane.items[x] = spawnItem(g, x, 'giant');
-      }
-    }
   }
 
   // ------- road lanes: moving obstacles -------
@@ -892,11 +937,8 @@ function makeLane(row){
       mob.position.set(-RENDER_HALF-1 + i*gap + rowRand(row,i*3)*1.5, 0, 0);
       if(dir<0){ mob.userData.facing=-1; mob.userData.sprite.scale.x *= -1; }
       g.add(mob);
-      lane.mobs.push({ model:mob, type:(type==='dirt'?'palanquin':'guard'), w:(type==='dirt'?1.5:0.9), dead:false });
-    }
-    // tteok on road occasionally
-    for(let x=COL_MIN;x<=COL_MAX;x++){
-      if(Math.random()<0.08){ lane.items[x]=spawnItem(g,x,'tteok'); }
+      lane.mobs.push({ model:mob, type:(type==='dirt'?'palanquin':'guard'),
+        w: mob.userData.collW || (type==='dirt'?1.6:0.95), dead:false });
     }
   }
 
@@ -915,30 +957,53 @@ function makeLane(row){
     }
   }
 
+  // ------- item spawn balancer -------
+  // No items in the first ITEM_SAFE_ROWS lanes (warm-up zone). After that, at
+  // most ONE item per lane, placed on a free column, with the chance thinning
+  // out as you go -> evenly scattered pickups instead of dense clumps.
+  if(row > ITEM_SAFE_ROWS && type!=='river' && type!=='gate'){
+    const rnd = s => (currentGameMode==='timeattack') ? rowRand(row, s) : Math.random();
+    const chance = Math.max(0.30, 0.55 - (row-ITEM_SAFE_ROWS)*0.0006);
+    if(rnd(101) < chance){
+      const cols=[];
+      for(let x=COL_MIN;x<=COL_MAX;x++){ if(!lane.statics[x] && !lane.items[x]) cols.push(x); }
+      if(cols.length){
+        const x = cols[(rnd(202)*cols.length)|0];
+        const r = rnd(303);
+        const kind = r<0.68 ? 'tteok' : (r<0.88 ? 'chili' : 'giant');  // 떡 68% / 고추 20% / 부적 12%
+        lane.items[x] = spawnItem(g, x, kind);
+      }
+    }
+  }
+
   scene.add(g);
   return lane;
 }
 
 // items are billboard sprites too (with a small ground shadow)
-const ITEM_SPRITE = {
-  tteok: { key:'tteok', w:0.75, h:0.85, shadowR:0.28 },
-  chili: { key:'chili', w:0.6,  h:0.85, shadowR:0.24 },
-  giant: { key:'giant', w:0.65, h:0.8,  shadowR:0.26 },
-};
+const ITEM_SAFE_ROWS = 10;                 // no items in the first 10 lanes (warm-up)
+const ITEM_TARGET_H = { tteok:0.95, bungeoppang:0.95, chili:0.9, giant:0.9 };
 function spawnItem(parent, x, kind){
-  const cfg = ITEM_SPRITE[kind];
-  const grp = makeSpriteEntity(ASSETS[cfg.key], cfg.w, cfg.h, { shadowR:cfg.shadowR });
+  // 떡(currency) randomly shows the sotteok skewer or the bungeoppang art
+  const key = (kind==='tteok') ? (Math.random()<0.5 ? 'bungeoppang' : 'tteok') : kind;
+  const grp = makeSpriteEntity(key, ITEM_TARGET_H[key]||0.9, { shadowR:0.3 });
   grp.position.set(x,0,0);
-  grp.userData.kind = kind;
+  grp.userData.kind = kind;              // gameplay kind: tteok / chili / giant
   parent.add(grp);
   return { kind, group:grp, taken:false, baseY:0 };
 }
 
-function buildPalanquin(){ return makeSpriteEntity(ASSETS.palanquin, 2.0, 1.6, { shadowR:0.9 }); }
-function buildGuard(){     return makeSpriteEntity(ASSETS.guard,     1.1, 1.6, { shadowR:0.4 }); }
-function buildTurtle(){    return makeSpriteEntity(ASSETS.turtle,    2.0, 1.05,{ shadowR:0.9 }); }
-function buildTree(){      return makeSpriteEntity(ASSETS.tree,      1.5, 2.0, { shadowR:0.5 }); }
-function buildRock(){      return makeSpriteEntity(ASSETS.rock,      1.15,0.95,{ shadowR:0.5 }); }
+const GAMA_KEYS = ['gama1','gama2','gama3','gama4'];
+function buildPalanquin(){
+  const key = RES_TEX.gama1 ? GAMA_KEYS[(Math.random()*GAMA_KEYS.length)|0] : 'palanquin';
+  const g = makeSpriteEntity(key, 1.7);
+  g.userData.collW = Math.min(2.6, g.userData.baseW*0.5);  // fair collision vs. the wide procession art
+  return g;
+}
+function buildGuard(){  return makeSpriteEntity('guard', 1.6); }
+function buildTurtle(){ return makeSpriteEntity('turtle', 1.05); }
+function buildTree(){   return makeSpriteEntity('tree', 2.0); }
+function buildRock(){   return makeSpriteEntity('rock', 0.95); }
 
 /* -------------------- Player -------------------- */
 let player = null;         // THREE.Group model
@@ -1248,12 +1313,16 @@ function disposeLane(lane){
   lane.group.traverse(o=>{ if((o.isMesh||o.isSprite) && o.material && o.material.dispose && o.material._noCache){ o.material.dispose(); } });
 }
 
+// Progressive difficulty: every 10 points speeds the whole game up 5% (capped +160%).
+function gameSpeedMul(){ return Math.min(2.6, 1 + Math.floor(run.score/10)*0.05); }
+
 function updateMobs(dt){
   const slow = feverActive ? 0.5 : 1;
+  const mul = gameSpeedMul();
   for(const k in lanes){
     const lane = lanes[k];
     if(!lane.mobs.length) continue;
-    const spd = lane.speed * lane.dir * slow;
+    const spd = lane.speed * lane.dir * slow * mul;
     for(const m of lane.mobs){
       if(m.dead) continue;
       m.model.position.x += spd*dt;
@@ -1342,9 +1411,9 @@ function updatePlayerAnim(dt){
 
 /* -------------------- Camera follow -------------------- */
 function updateCamera(dt){
-  // forced auto-scroll for infinite & ghost
+  // forced auto-scroll for infinite & ghost — starts slow, ramps with progressive speed
   if(currentGameMode==='infinite' || currentGameMode==='ghost'){
-    const scrollSpeed = 0.9 + Math.min(2.0, run.maxRow*0.004);
+    const scrollSpeed = 0.75 * gameSpeedMul();
     run.autoScrollRow += scrollSpeed*dt;
   }
   let target = Math.max(P.row, run.autoScrollRow);
@@ -1698,22 +1767,25 @@ window.addEventListener('resize', ()=>{
 /* -------------------- Menu mascot (renders the hero sprite crisply) -------------------- */
 function drawMascot(){
   const c = el('mascot'); const ctx = c.getContext('2d');
-  const img = new Image();
-  img.onload = ()=>{
-    ctx.imageSmoothingEnabled=false;
-    ctx.clearRect(0,0,64,64);
-    // fit the 56x74 hero into 64x64 keeping aspect + crisp pixels
-    const s = Math.min(64/img.width, 64/img.height);
-    const w = Math.round(img.width*s), h = Math.round(img.height*s);
-    ctx.drawImage(img, Math.round((64-w)/2), Math.round((64-h)/2), w, h);
+  const paint = src=>{
+    const img = new Image();
+    img.onload = ()=>{
+      ctx.imageSmoothingEnabled=false;
+      ctx.clearRect(0,0,64,64);
+      const s = Math.min(64/img.width, 64/img.height);
+      const w = Math.round(img.width*s), h = Math.round(img.height*s);
+      ctx.drawImage(img, Math.round((64-w)/2), Math.round((64-h)/2), w, h);
+    };
+    img.src = src;
   };
-  img.src = heroUrlFor(SKINS[0]);
+  if(RES_CANVAS.hero) paint(RES_CANVAS.hero.toDataURL('image/png')); // real GitHub art
+  else paint(heroUrlFor(SKINS[0]));                                  // generated fallback
 }
 
 /* -------------------- Boot -------------------- */
 function boot(){
   buildAssets();              // generate all pixel-art PNG data-URIs first (fallback)
-  loadResourceOverrides();    // swap in resources/*.png when served over http(s)
+  loadGitHubResources();      // fetch + chroma-key the real PNGs from the GitHub repo
   initThree();
   clock = new THREE.Clock();
   bindInput();
