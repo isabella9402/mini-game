@@ -174,9 +174,10 @@
 // NOTE: spaces are URL-encoded at load time via encodeURIComponent
 //       -> "main character.png" becomes "main%20character.png".
 const GITHUB_CONFIG = {
-  baseUrl: "https://raw.githubusercontent.com/isabella9402/mini-game/main/resources/",
-  characterDefault: "main character.png",   // 메인 캐릭터 (한복 삼색 고양이, 떡꼬치)
-  characterGhost:   "고스트 도깨비01.png",   // 고스트 레이스 전용 (투명 파란 재질)
+  baseUrl:   "https://raw.githubusercontent.com/isabella9402/mini-game/main/resources/",
+  baseUrl3D: "https://raw.githubusercontent.com/isabella9402/mini-game/main/3D_resources/",
+  characterDefault: "3D_main character.png",   // 3D 한복 삼색 고양이 (3D_resources)
+  characterGhost:   "3D_고스트 도깨비01.png",   // 고스트 레이스 전용 (3D_resources)
 };
 
 /* -------------------- Web Audio Retro SoundFX -------------------- */
@@ -328,7 +329,7 @@ function loadCharImage(file, cb){
       cb(tex, cv.width/cv.height, cv);              // aspect = width / height (not forced square)
     }catch(e){ cb(null); } };
   img.onerror=()=>cb(null);
-  img.src=GITHUB_CONFIG.baseUrl + encodeURIComponent(file);   // encodes spaces -> %20
+  img.src=GITHUB_CONFIG.baseUrl3D + encodeURIComponent(file);   // 3D 캐릭터, encodes spaces -> %20
 }
 function loadCharacter(){
   const load=document.getElementById('loading'); load.classList.remove('hidden');
@@ -379,21 +380,24 @@ const IMG_ENV = {
   rock:      ['바위01.png','바위02.png','바위03.png','바위04.png','바위05.png'],
   palanquin: ['Gama 1.png','Gama 2.png','Gama 3.png','Gama 4.png'],
   guard:     ['근위병.png'],
-  turtle:    ['거북 신령01.png','거북 신령02.png','거북 신령03.png'],
+  turtle:    ['3D_거북 신령01.png'],          // 3D 버전 (3D_resources)
   gate:      ['결승 궁궐 문.png'],
   eagle:     ['독수리01.png'],
   tteok:     ['ssotoek.png','붕어빵.png','십원빵.png'],
   chili:     ['고추01.png','고추03.png','고추04.png'],
   giant:     ['부적01.png','부적02.png','부적03.png'],
 };
+// keys whose images live in the 3D_resources folder instead of resources/
+const IMG_ENV_BASE = { turtle: 'baseUrl3D' };
 const TEX = {};   // key -> [{tex,aspect}, ...]
 function loadEnvResources(){
   for(const key in IMG_ENV){ TEX[key]=[];
+    const base = GITHUB_CONFIG[IMG_ENV_BASE[key] || 'baseUrl'];
     IMG_ENV[key].forEach(f=>{ const img=new Image(); img.crossOrigin='anonymous';
       img.onload=()=>{ try{ const cv=chromaKeyTrim(img); const t=new THREE.CanvasTexture(cv);
         t.magFilter=THREE.LinearFilter; t.minFilter=THREE.LinearFilter; t.generateMipmaps=false;
         TEX[key].push({ tex:t, aspect:cv.width/cv.height }); }catch(e){} };
-      img.onerror=()=>{}; img.src=GITHUB_CONFIG.baseUrl+encodeURIComponent(f); });
+      img.onerror=()=>{}; img.src=base+encodeURIComponent(f); });
   }
 }
 function pickTex(key,variant){ const a=TEX[key]; if(!a||!a.length) return null; return a[(variant!=null?variant:(Math.random()*a.length|0))%a.length]; }
