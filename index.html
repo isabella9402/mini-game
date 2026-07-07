@@ -620,7 +620,9 @@ function drawRock(){ // 바위 (boulder)
 // Built-in assets (generated at boot). Replace any value with your own PNG.
 const ASSETS = {};
 const heroTexCache = {};
+let heroFromResource = false;
 function heroUrlFor(skin){
+  if(heroFromResource && ASSETS.hero) return ASSETS.hero;   // use the supplied PNG for every skin
   if(!heroTexCache[skin.id]) heroTexCache[skin.id] = drawHero(skin);
   return heroTexCache[skin.id];
 }
@@ -636,14 +638,51 @@ function buildAssets(){
   ASSETS.hero      = heroUrlFor(SKINS[0]);
 }
 
+/* -------------------- Optional PNG overrides from the /resources folder -----
+   Drop PNG files into  resources/  next to index.html using these exact names
+   and they replace the built-in sprites automatically. Anything missing keeps
+   its generated fallback, so the game always runs.
+     resources/hero.png       — main character (calico cat in hanbok)
+     resources/ghost.png       — (optional) ghost racer; if absent, hero.png is
+                                  reused tinted luminous blue
+     resources/tteok.png  resources/chili.png  resources/giant.png
+     resources/guard.png  resources/palanquin.png  resources/turtle.png
+     resources/tree.png   resources/rock.png
+   NOTE: external PNGs only load when the page is served over http(s) — e.g.
+   GitHub Pages. When opened as a local file (file://), browsers block WebGL
+   textures loaded from disk, so the embedded sprites are used instead; to use
+   your art locally, paste its base64 into ASSETS above.
+   --------------------------------------------------------------------------- */
+const RESOURCE_DIR = 'resources/';
+const RESOURCE_FILES = {
+  hero:'hero.png', ghost:'ghost.png', tteok:'tteok.png', chili:'chili.png',
+  giant:'giant.png', guard:'guard.png', palanquin:'palanquin.png',
+  turtle:'turtle.png', tree:'tree.png', rock:'rock.png',
+};
+function loadResourceOverrides(){
+  if(location.protocol === 'file:') return;   // file:// can't use external textures safely
+  Object.keys(RESOURCE_FILES).forEach(key=>{
+    const url = RESOURCE_DIR + RESOURCE_FILES[key];
+    const img = new Image();
+    img.onload = ()=>{
+      ASSETS[key] = url;
+      delete texCache[url];                    // ensure it loads via NearestFilter loader
+      if(key==='hero'){ heroFromResource = true; drawMascot(); }
+    };
+    img.onerror = ()=>{};                       // keep the built-in fallback
+    img.src = url;
+  });
+}
+
 /* -------------------- Character builder (2D sprite billboard) -------------------- */
 // The hero is a flat pixel-art PNG (calico cat in hanbok) shown as a THREE.Sprite
 // with its own ground shadow. Ghost mode reuses the same art tinted luminous blue.
 function buildDokkaebi(skin, ghost=false){
-  const url = heroUrlFor(skin);
+  const hasGhostArt = ghost && ASSETS.ghost;      // dedicated ghost.png supplied?
+  const url = hasGhostArt ? ASSETS.ghost : heroUrlFor(skin);
   const g = makeSpriteEntity(url, 1.35, 1.78, {
     shadowR: 0.5,
-    color: ghost ? 0x7fb0ff : undefined,
+    color: (ghost && !hasGhostArt) ? 0x7fb0ff : undefined,   // tint reused hero art blue
     opacity: ghost ? 0.55 : 1,
   });
   g.userData.skin = skin;
@@ -1673,7 +1712,8 @@ function drawMascot(){
 
 /* -------------------- Boot -------------------- */
 function boot(){
-  buildAssets();          // generate all pixel-art PNG data-URIs first
+  buildAssets();              // generate all pixel-art PNG data-URIs first (fallback)
+  loadResourceOverrides();    // swap in resources/*.png when served over http(s)
   initThree();
   clock = new THREE.Clock();
   bindInput();
