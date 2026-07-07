@@ -299,16 +299,17 @@ const LS = {
 };
 
 /* -------------------- Skin / Gacha data -------------------- */
+// body = 고양이 무늬(fur patch) 색, cloth = 한복 저고리 색, horn = 갓(모자) 색
 const SKINS = [
-  { id:'default',  name:'기본 도깨비', rarity:'C',   body:0x8fd9a8, cloth:0xff9aa2, horn:0xffd36e },
-  { id:'peach',    name:'복숭아 도깨비', rarity:'C', body:0xffb7b2, cloth:0xffe08a, horn:0xff7ea8 },
-  { id:'mint',     name:'민트 도깨비', rarity:'C',   body:0xb5ead7, cloth:0xa0c4ff, horn:0xfdfd96 },
-  { id:'butter',   name:'버터 도깨비', rarity:'C',   body:0xfdfd96, cloth:0xffb7b2, horn:0xffa552 },
-  { id:'sky',      name:'하늘 도깨비', rarity:'R',   body:0x9ec5ff, cloth:0xffffff, horn:0xffd36e },
-  { id:'sakura',   name:'벚꽃 도깨비', rarity:'R',   body:0xffc2e2, cloth:0xff7ea8, horn:0xffffff },
-  { id:'forest',   name:'숲 도깨비', rarity:'R',     body:0x6fbf87, cloth:0x3c8f5a, horn:0xffe08a },
-  { id:'gold',     name:'황금 도깨비', rarity:'SSR', body:0xffd24a, cloth:0xffb300, horn:0xfff4c2 },
-  { id:'rainbow',  name:'무지개 도깨비', rarity:'SSR', body:0xff9ac4, cloth:0x9ad0ff, horn:0xfff07a, rainbow:true },
+  { id:'default',  name:'삼색 고양이', rarity:'C',   body:0xe8a95c, cloth:0xff9aa2, horn:0x2a2530 },
+  { id:'cheese',   name:'치즈 고양이', rarity:'C',   body:0xf0b45a, cloth:0xffe08a, horn:0x2a2530 },
+  { id:'gray',     name:'회색 고양이', rarity:'C',   body:0xa9adbd, cloth:0xa0c4ff, horn:0x2a2530 },
+  { id:'black',    name:'까망 고양이', rarity:'C',   body:0x5a5560, cloth:0xb5ead7, horn:0x2a2530 },
+  { id:'sky',      name:'하늘 한복 고양이', rarity:'R', body:0xe8a95c, cloth:0x9ec5ff, horn:0x2a2530 },
+  { id:'sakura',   name:'벚꽃 한복 고양이', rarity:'R', body:0xf7d0c0, cloth:0xff7ea8, horn:0x2a2530 },
+  { id:'forest',   name:'먹빛 선비 고양이', rarity:'R', body:0x6e4a30, cloth:0x3c8f5a, horn:0x2a2530 },
+  { id:'gold',     name:'황금 고양이', rarity:'SSR', body:0xffd24a, cloth:0xffb300, horn:0x3a2f10 },
+  { id:'rainbow',  name:'무지개 한복 고양이', rarity:'SSR', body:0xf7f3ea, cloth:0xff9ac4, horn:0x2a2530, rainbow:true },
 ];
 const RARITY_LABEL = { C:'COMMON', R:'RARE', SSR:'SSR' };
 
@@ -318,8 +319,8 @@ let gameState = State.MENU;
 let currentGameMode = null; // 'infinite' | 'timeattack' | 'ghost'
 
 const TILE = 1;
-const COL_MIN = -5, COL_MAX = 5;     // player movable columns
-const RENDER_HALF = 8;               // lanes render this many cols each side
+const COL_MIN = -7, COL_MAX = 7;     // player movable columns (wider, open field)
+const RENDER_HALF = 12;              // lanes render this many cols each side
 const TA_GOAL = 200;                 // Time Attack finish row
 const TA_TIME = 30;                  // Time Attack seconds
 
@@ -348,12 +349,13 @@ function initThree(){
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xcdeafe);
-  scene.fog = new THREE.Fog(0xcdeafe, 18, 34);
+  // warm neutral sky so lanes read distinctly (no blue wash over everything)
+  scene.background = new THREE.Color(0xfdeee4);
+  scene.fog = new THREE.Fog(0xfdeee4, 30, 52);
 
-  // Isometric orthographic camera
+  // Isometric orthographic camera (zoomed out a touch for the wider, open field)
   const aspect = window.innerWidth/window.innerHeight;
-  const d = 8.5;
+  const d = 10.5;
   camera = new THREE.OrthographicCamera(-d*aspect, d*aspect, d, -d, 0.1, 200);
   camera.position.set(14, 18, 14);
   camera.lookAt(0,0,0);
@@ -367,7 +369,7 @@ function initThree(){
   keyLight.position.set(10, 20, 8);
   keyLight.castShadow = true;
   keyLight.shadow.mapSize.set(1024,1024);
-  const s = 16;
+  const s = 20;
   keyLight.shadow.camera.left=-s; keyLight.shadow.camera.right=s;
   keyLight.shadow.camera.top=s;   keyLight.shadow.camera.bottom=-s;
   keyLight.shadow.camera.near=1;  keyLight.shadow.camera.far=60;
@@ -400,39 +402,79 @@ function box(w,h,d,color,opts){
 }
 
 /* -------------------- Voxel model builders -------------------- */
+// Main character: a calico cat wearing a gat (traditional hat) + hanbok,
+// holding a tteok skewer. Uses its own (non-cached) materials so the
+// stealth transparency effect never leaks onto shared world materials.
 function buildDokkaebi(skin, ghost=false){
   const g = new THREE.Group();
-  const op = ghost ? { transparent:true, opacity:0.45, emissive:0x1b3f8a } : {};
-  const bodyColor = ghost ? 0x66aaff : skin.body;
-  const clothColor = ghost ? 0x3f7fff : skin.cloth;
-  const hornColor  = ghost ? 0x99ccff : skin.horn;
-
-  // legs
-  const legL = box(0.22,0.28,0.22, clothColor, op); legL.position.set(-0.16,0.14,0); g.add(legL);
-  const legR = box(0.22,0.28,0.22, clothColor, op); legR.position.set( 0.16,0.14,0); g.add(legR);
-  // body
-  const body = box(0.62,0.5,0.5, bodyColor, op); body.position.y=0.55; g.add(body);
-  // belly cloth
-  const belly = box(0.5,0.24,0.42, clothColor, op); belly.position.y=0.42; g.add(belly);
-  // arms
-  const armL = box(0.16,0.4,0.18, bodyColor, op); armL.position.set(-0.4,0.58,0); g.add(armL);
-  const armR = box(0.16,0.4,0.18, bodyColor, op); armR.position.set( 0.4,0.58,0); g.add(armR);
-  // head
-  const head = box(0.6,0.55,0.55, bodyColor, op); head.position.y=1.08; g.add(head);
-  // eyes
-  const eyeL = box(0.12,0.14,0.06, 0x2a2540, op); eyeL.position.set(-0.14,1.14,0.28); g.add(eyeL);
-  const eyeR = box(0.12,0.14,0.06, 0x2a2540, op); eyeR.position.set( 0.14,1.14,0.28); g.add(eyeR);
-  // cheeks
-  const chk = box(0.5,0.1,0.05, 0xff8f88, op); chk.position.set(0,1.0,0.28); g.add(chk);
-  // horns
-  const hornL = box(0.14,0.3,0.14, hornColor, op); hornL.position.set(-0.2,1.5,0); hornL.rotation.z=0.25; g.add(hornL);
-  const hornR = box(0.14,0.3,0.14, hornColor, op); hornR.position.set( 0.2,1.5,0); hornR.rotation.z=-0.25; g.add(hornR);
-  // club (방망이) in right hand
-  if(!ghost){
-    const club = box(0.14,0.5,0.14, 0xb07a3c, op); club.position.set(0.56,0.72,0); club.rotation.z=-0.3; g.add(club);
+  const baseOpacity = ghost ? 0.45 : 1;
+  const emissive = ghost ? 0x1b3f8a : 0x000000;
+  function pbox(w,h,d,color){
+    const m = new THREE.Mesh(GEO.box, new THREE.MeshLambertMaterial({
+      color, transparent:ghost, opacity:baseOpacity, emissive }));
+    m.material._noCache = true;
+    m.scale.set(w,h,d); m.castShadow = true;
+    return m;
   }
+  // palette (ghost overrides to luminous blue)
+  const fur   = ghost?0x8ec1ff:0xf7f3ea;   // white fur base
+  const patch = ghost?0x5f9bff:skin.body;  // calico patches
+  const cloth = ghost?0x3f7fff:skin.cloth; // hanbok jeogori
+  const pants = ghost?0x2f5fd0:0x39416e;   // baji (trousers)
+  const hat   = ghost?0x27488f:skin.horn;  // gat (black)
+  const pink  = ghost?0x8fb8ff:0xff8f88;
+  const stick = ghost?0x5f9bff:0x8a5a2b;
+  const add=(m,x,y,z)=>{ m.position.set(x,y,z); g.add(m); return m; };
 
-  g.userData.parts = { legL, legR, body, head, hornL, hornR };
+  // --- feet + baji (trousers) ---
+  add(pbox(0.26,0.1,0.28, fur), -0.17,0.05,0.04);
+  add(pbox(0.26,0.1,0.28, fur),  0.17,0.05,0.04);
+  add(pbox(0.26,0.32,0.28, pants), -0.17,0.24,0);
+  add(pbox(0.26,0.32,0.28, pants),  0.17,0.24,0);
+
+  // --- hanbok top (jeogori) ---
+  add(pbox(0.66,0.44,0.52, cloth), 0,0.62,0);
+  add(pbox(0.68,0.12,0.54, fur),   0,0.82,0);      // white collar trim
+  add(pbox(0.16,0.16,0.14, patch), 0,0.7,0.28);    // goreum bow
+
+  // --- sleeves + white paws holding the tteok skewer ---
+  add(pbox(0.18,0.34,0.22, cloth), -0.43,0.62,0.02);
+  add(pbox(0.18,0.34,0.22, cloth),  0.43,0.62,0.02);
+  add(pbox(0.17,0.16,0.2, fur),    -0.3,0.5,0.3);
+  add(pbox(0.17,0.16,0.2, fur),     0.3,0.5,0.3);
+  // tteok skewer (떡꼬치) held across the front
+  add(pbox(0.55,0.06,0.06, stick), 0,0.56,0.34);
+  [-0.17,0,0.17].forEach((sx,i)=>{
+    add(pbox(0.17,0.17,0.17, i%2? 0xffd9e0 : 0xfff5ef), sx,0.6,0.34);
+  });
+
+  // --- head ---
+  add(pbox(0.58,0.52,0.54, fur), 0,1.06,0);
+  add(pbox(0.34,0.26,0.4, patch),  0.14,1.24,0.02);  // calico patch (top-right)
+  add(pbox(0.22,0.3,0.24, patch), -0.24,1.02,0.1);   // calico patch (left cheek)
+  // ears
+  const earL=add(pbox(0.2,0.24,0.14, fur), -0.2,1.42,0); earL.rotation.z=0.18;
+  const earR=add(pbox(0.2,0.24,0.14, patch), 0.2,1.42,0); earR.rotation.z=-0.18;
+  add(pbox(0.09,0.12,0.06, pink), -0.2,1.44,0.06);
+  add(pbox(0.09,0.12,0.06, pink),  0.2,1.44,0.06);
+  // face
+  add(pbox(0.11,0.15,0.06, 0x2a2530), -0.14,1.08,0.27);
+  add(pbox(0.11,0.15,0.06, 0x2a2530),  0.14,1.08,0.27);
+  add(pbox(0.04,0.05,0.04, fur), -0.16,1.12,0.31);
+  add(pbox(0.04,0.05,0.04, fur),  0.12,1.12,0.31);
+  add(pbox(0.08,0.06,0.06, pink), 0,1.0,0.29);        // nose
+  add(pbox(0.5,0.08,0.05, 0xffb3b3), 0,0.97,0.27);    // blush
+
+  // --- gat (traditional hat) ---
+  add(pbox(0.98,0.06,0.98, hat), 0,1.5,0);            // wide brim
+  add(pbox(0.5,0.36,0.5, hat),   0,1.72,0);           // crown
+  add(pbox(0.52,0.07,0.52, 0x6b5a3a), 0,1.56,0);      // band
+
+  // --- tail ---
+  const t1=add(pbox(0.16,0.16,0.42, patch), 0.28,0.42,-0.34); t1.rotation.x=0.5;
+  const t2=add(pbox(0.15,0.15,0.3, fur),    0.38,0.72,-0.5);  t2.rotation.x=0.9;
+
+  g.userData.parts = {};
   g.userData.skin = skin;
   return g;
 }
@@ -509,11 +551,13 @@ let feverActive=false;
 const LANE_TYPES = ['grass','dirt','stone','river'];
 
 function laneBaseColor(type, row){
-  if(type==='grass') return (row%2===0)?0xbde6cf:0xa9dfc0;
-  if(type==='dirt')  return (row%2===0)?0xd8c3a5:0xceb798;
-  if(type==='stone') return (row%2===0)?0xd0d0da:0xc4c4d0;
-  if(type==='river') return 0x8fb8f0;
-  return 0xbde6cf;
+  // clearly separated palettes so every lane type reads at a glance
+  if(type==='grass') return (row%2===0)?0x9ede8f:0x86d47c;   // vivid green meadow
+  if(type==='dirt')  return (row%2===0)?0xdcae74:0xd0a061;   // warm tan dirt road
+  if(type==='stone') return (row%2===0)?0xbfc0d2:0xacaec4;   // cool grey palace stone
+  if(type==='river') return (row%2===0)?0x3f8fe0:0x357fd0;   // deep blue water
+  if(type==='gate')  return (row%2===0)?0x9ede8f:0x86d47c;
+  return 0x9ede8f;
 }
 
 // deterministic pseudo-random per row for stable maps
@@ -531,35 +575,47 @@ function makeLane(row){
     else if(row>=TA_GOAL) type='gate';
     else {
       const r = rowRand(row,1);
-      if(r<0.42) type='grass'; else if(r<0.66) type='dirt';
-      else if(r<0.84) type='stone'; else type='river';
+      if(r<0.44) type='grass'; else if(r<0.68) type='dirt';
+      else if(r<0.88) type='stone'; else type='river';
     }
   } else {
     if(row<=3) type='grass';
     else {
       const r = Math.random();
-      if(r<0.34) type='grass'; else if(r<0.58) type='dirt';
-      else if(r<0.78) type='stone'; else type='river';
+      if(r<0.40) type='grass'; else if(r<0.64) type='dirt';
+      else if(r<0.88) type='stone'; else type='river';
     }
   }
 
+  // avoid two rivers back-to-back so the player always has footing nearby
+  if(type==='river' && lanes[row-1] && lanes[row-1].type==='river') type='grass';
+
   const lane = { row, type, group:g, mobs:[], statics:{}, items:{}, dir:1, speed:0 };
 
-  // ground tiles
+  // ground
   const baseColor = laneBaseColor(type,row);
-  for(let x=-RENDER_HALF;x<=RENDER_HALF;x++){
-    let c = baseColor;
-    const t = box(1,0.5,1, c);
-    t.receiveShadow = true; t.castShadow=false;
-    t.position.set(x, -0.25, 0);
-    g.add(t);
-    lane._tiles = lane._tiles||[]; lane._tiles.push(t);
-    lane._baseColor = baseColor;
-  }
-  // water surface tint for river
+  lane._tiles = []; lane._baseColor = baseColor;
   if(type==='river'){
-    const w = box(2*RENDER_HALF+1, 0.06, 1, 0x6fa8ea, {transparent:true, opacity:0.6, noShadow:true});
-    w.position.set(0, 0.03, 0); g.add(w);
+    // recessed water slab that visibly sits BELOW the banks -> clearly a river
+    const water = box(2*RENDER_HALF+1, 0.5, 1, baseColor, {noShadow:true});
+    water.receiveShadow = true; water.position.set(0, -0.43, 0);
+    g.add(water); lane._tiles.push(water);
+    const shimmer = box(2*RENDER_HALF+1, 0.05, 0.92, 0x8fc4f5, {transparent:true, opacity:0.55, noShadow:true});
+    shimmer.position.set(0, -0.16, 0); g.add(shimmer); lane.shimmer = shimmer;
+    // lotus decoration (연꽃 강) — purely cosmetic
+    for(let i=0;i<3;i++){
+      const lx = -RENDER_HALF + 2 + i*4 + rowRand(row,i*17)*3;
+      const pad = box(0.7,0.05,0.7, 0x6fbf87, {noShadow:true}); pad.position.set(lx,-0.14,0.25); g.add(pad);
+      const fl  = box(0.22,0.16,0.22, 0xff9ac4, {noShadow:true}); fl.position.set(lx,-0.02,0.25); g.add(fl);
+    }
+  } else {
+    for(let x=-RENDER_HALF;x<=RENDER_HALF;x++){
+      const t = box(1,0.5,1, baseColor);
+      t.receiveShadow = true; t.castShadow=false;
+      t.position.set(x, -0.25, 0);
+      g.add(t);
+      lane._tiles.push(t);
+    }
   }
 
   // ------- gate lane (finish) -------
@@ -642,18 +698,18 @@ function makeLane(row){
     }
   }
 
-  // ------- river: turtles (rideable) -------
+  // ------- river: divine turtles (rideable, generous footing) -------
   if(type==='river'){
     const dir = (rowRand(row,7)<0.5)?1:-1;
-    const spd = 1.2 + rowRand(row,3)*1.4;
+    const spd = 1.0 + rowRand(row,3)*0.9;          // gentler current -> fair
     lane.dir=dir; lane.speed=spd;
-    const count = 2 + Math.floor(rowRand(row,4)*2);
+    const count = 4 + Math.floor(rowRand(row,4)*2); // 4-5 turtles: always one within reach
     const gap = (2*RENDER_HALF+2)/count;
     for(let i=0;i<count;i++){
       const turtle = buildTurtle();
-      turtle.position.set(-RENDER_HALF-1 + i*gap + rowRand(row,i*5)*1.5, 0.02, 0);
+      turtle.position.set(-RENDER_HALF-1 + i*gap + rowRand(row,i*5)*1.2, 0.0, 0);
       g.add(turtle);
-      lane.mobs.push({ model:turtle, type:'turtle', w:1.2, dead:false });
+      lane.mobs.push({ model:turtle, type:'turtle', w:1.8, dead:false });
     }
   }
 
@@ -702,12 +758,15 @@ function buildGuard(){
 }
 function buildTurtle(){
   const g=new THREE.Group();
-  const shell=box(1.2,0.4,0.9,0x5f8f5a); shell.position.y=0.25; g.add(shell);
-  const shellTop=box(0.8,0.25,0.6,0x7ab074); shellTop.position.y=0.5; g.add(shellTop);
-  const head=box(0.3,0.3,0.35,0x9ec98c); head.position.set(0.7,0.25,0); g.add(head);
-  const eye=box(0.08,0.08,0.06,0x222); eye.position.set(0.86,0.32,0.12); g.add(eye);
-  const l1=box(0.25,0.2,0.25,0x5f8f5a); l1.position.set(0.4,0.1,0.4); g.add(l1);
-  const l2=box(0.25,0.2,0.25,0x5f8f5a); l2.position.set(-0.4,0.1,0.4); g.add(l2);
+  const shell=box(1.9,0.42,1.0,0x5f8f5a); shell.position.y=0.16; g.add(shell);
+  const shellTop=box(1.35,0.3,0.72,0x7ab074); shellTop.position.y=0.44; g.add(shellTop);
+  const pattern=box(0.7,0.34,0.4,0x4d7a4a); pattern.position.y=0.46; g.add(pattern);
+  const head=box(0.34,0.34,0.4,0x9ec98c); head.position.set(1.05,0.16,0); g.add(head);
+  const eye=box(0.08,0.08,0.06,0x222222); eye.position.set(1.22,0.24,0.14); g.add(eye);
+  const l1=box(0.3,0.22,0.3,0x5f8f5a); l1.position.set(0.6,0.02,0.5); g.add(l1);
+  const l2=box(0.3,0.22,0.3,0x5f8f5a); l2.position.set(-0.6,0.02,0.5); g.add(l2);
+  const l3=box(0.3,0.22,0.3,0x5f8f5a); l3.position.set(0.6,0.02,-0.5); g.add(l3);
+  const l4=box(0.3,0.22,0.3,0x5f8f5a); l4.position.set(-0.6,0.02,-0.5); g.add(l4);
   return g;
 }
 
@@ -1086,7 +1145,8 @@ function updatePlayerAnim(dt){
     player.scale.set(1/Math.sqrt(sc), sc, 1/Math.sqrt(sc));
     if(k>=1) finishJump();
   } else {
-    player.position.set(P.worldX, 0, P.worldZ);
+    const lift = P.ridingTurtle ? 0.45 : 0;   // sit on the turtle shell
+    player.position.set(P.worldX, lift, P.worldZ);
     const idle = 1 + Math.sin(run.elapsed*4)*0.02;
     player.scale.set(1,idle,1);
   }
@@ -1454,7 +1514,7 @@ function bindInput(){
 window.addEventListener('resize', ()=>{
   if(!renderer) return;
   const aspect = window.innerWidth/window.innerHeight;
-  const d = 8.5;
+  const d = 10.5;
   camera.left=-d*aspect; camera.right=d*aspect; camera.top=d; camera.bottom=-d;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1462,24 +1522,34 @@ window.addEventListener('resize', ()=>{
 
 /* -------------------- Menu mascot pixel drawing -------------------- */
 function drawMascot(){
+  // calico cat in a hanbok, wearing a gat, holding a tteok skewer
   const c = el('mascot'); const ctx = c.getContext('2d');
   ctx.imageSmoothingEnabled=false;
   const px=(x,y,w,h,col)=>{ ctx.fillStyle=col; ctx.fillRect(x,y,w,h); };
   ctx.clearRect(0,0,64,64);
-  // horns
-  px(18,8,6,8,'#ffd36e'); px(40,8,6,8,'#ffd36e');
+  // gat (hat)
+  px(14,4,36,4,'#2a2530');           // brim
+  px(24,-2,16,8,'#2a2530');          // crown
+  // ears
+  px(18,8,7,7,'#f7f3ea'); px(39,8,7,7,'#e8a95c');
+  px(20,10,3,3,'#ff8f88'); px(41,10,3,3,'#ff8f88');
   // head
-  px(16,14,32,20,'#8fd9a8');
-  // eyes
-  px(24,20,6,6,'#2a2540'); px(36,20,6,6,'#2a2540');
-  // cheeks
-  px(20,28,24,4,'#ff8f88');
-  // body
-  px(20,34,24,20,'#8fd9a8');
-  // belly
-  px(24,40,16,10,'#ff9aa2');
-  // legs
-  px(22,54,7,8,'#ff9aa2'); px(35,54,7,8,'#ff9aa2');
+  px(16,12,32,22,'#f7f3ea');
+  px(34,12,14,10,'#e8a95c');         // calico patch
+  // eyes + nose
+  px(23,20,5,6,'#2a2530'); px(36,20,5,6,'#2a2530');
+  px(30,26,4,3,'#ff8f88');
+  px(19,27,10,3,'#ffb3b3'); px(35,27,10,3,'#ffb3b3'); // blush
+  // hanbok body
+  px(19,34,26,16,'#ff9aa2');
+  px(19,34,26,3,'#f7f3ea');          // collar
+  // paws + tteok skewer
+  px(16,42,6,6,'#f7f3ea'); px(42,42,6,6,'#f7f3ea');
+  px(20,44,24,4,'#8a5a2b');          // stick
+  px(23,42,7,7,'#fff5ef'); px(31,42,7,7,'#ffd9e0'); // tteok balls
+  // baji (trousers)
+  px(21,50,9,10,'#39416e'); px(34,50,9,10,'#39416e');
+  px(21,58,9,4,'#f7f3ea'); px(34,58,9,4,'#f7f3ea'); // feet
 }
 
 /* -------------------- Boot -------------------- */
