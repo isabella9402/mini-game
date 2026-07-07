@@ -293,8 +293,11 @@ function box(w,h,d,color,opts){ const m=new THREE.Mesh(GEO.box, mat(color,opts))
    ========================================================================= */
 let charTexture=null, charAspect=0.7, charReady=false;      // main character (고양이)
 let ghostTexture=null, ghostAspect=0.7, ghostReady=false;   // ghost racer (고스트 도깨비01)
-const CHAR_W=1.5;          // fixed billboard width for characters (height derives from aspect)
+const CHAR_W=1.0;          // 캐릭터: 1칸에 딱 맞게 (height는 aspect로 계산)
 const LANE_TOP=0;          // top surface Y of a lane box (box centred at -0.25, height 0.5)
+// ---- Strict visual size hierarchy (fixed WIDTHS in grid units) ----
+// 나무 > 가마 > 근위병 ≳ 캐릭터 > 거북. height는 항상 width/aspect 로 계산되어 안 찌그러짐.
+const SIZE = { tree:2.8, rock:1.1, palanquin:1.8, guard:0.85, turtle:1.4, gate:6.0, eagle:2.0, item:0.7 };
 function chromaKeyTrim(img){
   const w=img.width,h=img.height; const c=document.createElement('canvas'); c.width=w; c.height=h;
   const x=c.getContext('2d'); x.drawImage(img,0,0);
@@ -399,7 +402,8 @@ function pickTex(key,variant){ const a=TEX[key]; if(!a||!a.length) return null; 
 // the plane's bottom edge sits exactly on the lane surface (LANE_TOP).
 function makeBillboard(key, width, opt){
   opt=opt||{}; const g=new THREE.Group(); const r=pickTex(key,opt.variant);
-  if(r){ const w=width, h=width/r.aspect;
+  if(r){ let w=width, h=width/r.aspect;
+    if(opt.maxH && h>opt.maxH){ h=opt.maxH; w=h*r.aspect; }   // cap height for very tall art (keeps aspect)
     const m=new THREE.MeshBasicMaterial({ map:r.tex, transparent:true, alphaTest:0.35, side:THREE.DoubleSide, depthWrite:true,
       color:opt.color||0xffffff, opacity:opt.opacity!==undefined?opt.opacity:1 });
     const geo=new THREE.PlaneGeometry(w,h); geo.translate(0,h/2,0);   // bottom-pivot
@@ -435,14 +439,14 @@ function vxEagle(g){ const body=box(1,0.6,1.4,0xb79a86); g.add(body);
   g.userData.wl=wl; g.userData.wr=wr; }
 
 /* -------------------- Public builders (image billboard + fallback) --------------------
-   First arg is a FIXED WIDTH; height is derived from each image's real aspect. */
-function buildTree(){ return makeBillboard('tree',2.5,{fallback:vxTree}); }
-function buildRock(){ return makeBillboard('rock',1.6,{fallback:vxRock}); }
-function buildPalanquin(){ return makeBillboard('palanquin',2.8,{fallback:vxPalanquin}); }
-function buildGuard(){ return makeBillboard('guard',1.4,{fallback:vxGuard}); }
-function buildTurtle(){ return makeBillboard('turtle',2.4,{fallback:vxTurtle}); }
-function buildGate(){ return makeBillboard('gate',7.0,{noShadow:true,fallback:vxGate}); }
-function buildEagle(){ return makeBillboard('eagle',2.2,{noShadow:true,fallback:vxEagle}); }
+   First arg is a FIXED WIDTH (grid units); height = width / aspect (never squished). */
+function buildTree(){ return makeBillboard('tree',SIZE.tree,{fallback:vxTree}); }
+function buildRock(){ return makeBillboard('rock',SIZE.rock,{fallback:vxRock}); }
+function buildPalanquin(){ return makeBillboard('palanquin',SIZE.palanquin,{fallback:vxPalanquin}); }
+function buildGuard(){ return makeBillboard('guard',SIZE.guard,{maxH:1.35,fallback:vxGuard}); }  // chibi: only a bit taller than the cat
+function buildTurtle(){ return makeBillboard('turtle',SIZE.turtle,{fallback:vxTurtle}); }
+function buildGate(){ return makeBillboard('gate',SIZE.gate,{noShadow:true,fallback:vxGate}); }
+function buildEagle(){ return makeBillboard('eagle',SIZE.eagle,{noShadow:true,fallback:vxEagle}); }
 
 /* -------------------- Particles (3D voxel) -------------------- */
 const particles=[]; const MAX_PARTICLES=240;
@@ -526,32 +530,40 @@ function makeLane(row){
   }
   if(type==='gate'){ const gate=buildGate(); g.add(gate); lane.gateGroup=gate; }
 
+  // GRASS: only trees/rocks, grid-aligned, <=30% coverage, min 2-tile gaps
   if(type==='grass' && row>4){
-    const density=currentGameMode==='timeattack'?0.16:0.2; let used=0;
+    const COLS = COL_MAX-COL_MIN+1;                 // playable columns
+    const maxObj = Math.floor(COLS*0.3);            // hard cap = 30% coverage
+    const placed=[];
     for(let x=COL_MIN;x<=COL_MAX;x++){
-      const rr=currentGameMode==='timeattack'?rowRand(row,x*7+3):Math.random();
-      if(rr<density && used<(COL_MAX-COL_MIN-1)){ used++;
-        const kind = (currentGameMode==='timeattack'?rowRand(row,x*13):Math.random())<0.6?'tree':'rock';
-        const obs = kind==='tree'?buildTree():buildRock();
-        obs.position.set(x,0,0); g.add(obs); lane.statics[x]={ kind, group:obs, solid:true };
+      if(placed.length>=maxObj) break;
+      if(placed.length && (x-placed[placed.length-1])<2) continue;   // keep >=1 empty column between objects
+      const rr=(currentGameMode==='timeattack')?rowRand(row,x*7+3):Math.random();
+      if(rr<0.24){
+        const kind=(currentGameMode==='timeattack'?rowRand(row,x*13):Math.random())<0.6?'tree':'rock';
+        const obs=kind==='tree'?buildTree():buildRock();
+        obs.position.set(x,0,0);                     // centred on the grid cell
+        g.add(obs); lane.statics[x]={ kind, group:obs, solid:true }; placed.push(x);
       }
     }
-    [-RENDER_HALF+1, RENDER_HALF-1].forEach(x=>{ if(x>COL_MAX||x<COL_MIN){ const t=buildTree(); t.position.set(x,0,0); g.add(t); } });
   }
+  // ROAD: ONLY moving obstacles (palanquin/guard). Max 2, spaced >=6 grid units. No statics.
   if(type==='road'){
-    const dir=(rowRand(row,5)<0.5)?1:-1; lane.dir=dir; lane.speed=1.5+rowRand(row,9)*1.9;
-    const count=2+Math.floor(rowRand(row,11)*2); const gap=(2*RENDER_HALF+2)/count;
-    for(let i=0;i<count;i++){ const isPal=rowRand(row,i*3)<0.5; const mob=isPal?buildPalanquin():buildGuard();
-      mob.position.set(-RENDER_HALF-1+i*gap+rowRand(row,i*7)*1.5,0,0);
+    const dir=(rowRand(row,5)<0.5)?1:-1; lane.dir=dir; lane.speed=1.4+rowRand(row,9)*1.5;
+    const count=1+(rowRand(row,11)<0.55?1:0);       // 1 or 2 obstacles only
+    const span=2*(RENDER_HALF+2); const gap=span/count;   // gap >= span/2 (~12) -> big crossing windows
+    for(let i=0;i<count;i++){ const isPal=rowRand(row,i*3+1)<0.5; const mob=isPal?buildPalanquin():buildGuard();
+      mob.position.set(-(RENDER_HALF+2)+i*gap, 0, 0);      // even spacing, no free-random offset
       if(dir<0){ if(mob.userData.bb) mob.userData.bb.scale.x=-1; else mob.rotation.y=Math.PI; }
-      g.add(mob); lane.mobs.push({ model:mob, kind:isPal?'palanquin':'guard', w:isPal?1.6:0.95, dead:false }); }
+      g.add(mob); lane.mobs.push({ model:mob, kind:isPal?'palanquin':'guard', w:isPal?1.5:0.8, dead:false }); }
   }
+  // WATER: divine turtles (rideable stepping stones), evenly spaced, nestled in the channel
   if(type==='water'){
-    const dir=(rowRand(row,7)<0.5)?1:-1; lane.dir=dir; lane.speed=1.0+rowRand(row,3)*0.9;
+    const dir=(rowRand(row,7)<0.5)?1:-1; lane.dir=dir; lane.speed=1.0+rowRand(row,3)*0.8;
     const count=4+Math.floor(rowRand(row,4)*2); const gap=(2*RENDER_HALF+2)/count;
-    for(let i=0;i<count;i++){ const t=buildTurtle(); t.position.set(-RENDER_HALF-1+i*gap+rowRand(row,i*5)*1.2,0,0);
+    for(let i=0;i<count;i++){ const t=buildTurtle(); t.position.set(-RENDER_HALF-1+i*gap+rowRand(row,i*5)*1.0,-0.1,0);
       if(dir<0 && t.userData.bb) t.userData.bb.scale.x=-1; g.add(t);
-      lane.mobs.push({ model:t, kind:'turtle', w:1.6, dead:false }); }
+      lane.mobs.push({ model:t, kind:'turtle', w:1.3, dead:false }); }
   }
   // item balancer
   if(row>ITEM_SAFE_ROWS && type!=='water' && type!=='gate'){
@@ -567,8 +579,8 @@ function spawnItem(parent,x,kind){
   const fb = kind==='tteok' ? g=>{ const b=box(0.42,0.42,0.42,0xfff2f6,{emissive:0x553344}); b.position.y=0.62; g.add(b); const s=box(0.44,0.1,0.44,0xff9aa2); s.position.y=0.62; g.add(s); }
     : kind==='chili' ? g=>{ const b=box(0.22,0.55,0.22,0xe5484d,{emissive:0x551111}); b.position.y=0.6; g.add(b); const st=box(0.12,0.16,0.12,0x5fae74); st.position.set(-0.08,0.86,0); g.add(st); }
     : g=>{ const b=box(0.5,0.5,0.15,0xffd36e,{emissive:0x554400}); b.position.y=0.65; g.add(b); };
-  const grp=makeBillboard(kind, 0.95, { noShadow:true, fallback:fb });
-  grp.position.set(x,0,0); parent.add(grp); return { kind, group:grp, taken:false };
+  const grp=makeBillboard(kind, SIZE.item, { noShadow:true, fallback:fb });
+  grp.position.set(x,0,0); parent.add(grp); return { kind, group:grp, taken:false };   // centred on the grid cell
 }
 
 /* -------------------- Player + ghost rigs -------------------- */
