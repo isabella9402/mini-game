@@ -379,7 +379,7 @@ function initThree(){
 }
 
 /* -------------------- Shared geometry / material cache -------------------- */
-const GEO = { box: new THREE.BoxGeometry(1,1,1) };
+const GEO = { box: new THREE.BoxGeometry(1,1,1), circle: new THREE.CircleGeometry(0.5, 20) };
 const matCache = {};
 function mat(color, opts={}){
   const key = color + '|' + (opts.transparent?1:0) + '|' + (opts.opacity||1) + '|' + (opts.emissive||0);
@@ -401,81 +401,253 @@ function box(w,h,d,color,opts){
   return m;
 }
 
-/* -------------------- Voxel model builders -------------------- */
-// Main character: a calico cat wearing a gat (traditional hat) + hanbok,
-// holding a tteok skewer. Uses its own (non-cached) materials so the
-// stealth transparency effect never leaks onto shared world materials.
-function buildDokkaebi(skin, ghost=false){
-  const g = new THREE.Group();
-  const baseOpacity = ghost ? 0.45 : 1;
-  const emissive = ghost ? 0x1b3f8a : 0x000000;
-  function pbox(w,h,d,color){
-    const m = new THREE.Mesh(GEO.box, new THREE.MeshLambertMaterial({
-      color, transparent:ghost, opacity:baseOpacity, emissive }));
-    m.material._noCache = true;
-    m.scale.set(w,h,d); m.castShadow = true;
-    return m;
-  }
-  // palette (ghost overrides to luminous blue)
-  const fur   = ghost?0x8ec1ff:0xf7f3ea;   // white fur base
-  const patch = ghost?0x5f9bff:skin.body;  // calico patches
-  const cloth = ghost?0x3f7fff:skin.cloth; // hanbok jeogori
-  const pants = ghost?0x2f5fd0:0x39416e;   // baji (trousers)
-  const hat   = ghost?0x27488f:skin.horn;  // gat (black)
-  const pink  = ghost?0x8fb8ff:0xff8f88;
-  const stick = ghost?0x5f9bff:0x8a5a2b;
-  const add=(m,x,y,z)=>{ m.position.set(x,y,z); g.add(m); return m; };
+/* =========================================================================
+   2D PIXEL-ART SPRITE SYSTEM (Billboarding)
+   -------------------------------------------------------------------------
+   Entities are flat 2D pixel-art PNGs shown as THREE.Sprite billboards that
+   face the camera, with a separate flat ground-shadow ellipse beneath them.
 
-  // --- feet + baji (trousers) ---
-  add(pbox(0.26,0.1,0.28, fur), -0.17,0.05,0.04);
-  add(pbox(0.26,0.1,0.28, fur),  0.17,0.05,0.04);
-  add(pbox(0.26,0.32,0.28, pants), -0.17,0.24,0);
-  add(pbox(0.26,0.32,0.28, pants),  0.17,0.24,0);
-
-  // --- hanbok top (jeogori) ---
-  add(pbox(0.66,0.44,0.52, cloth), 0,0.62,0);
-  add(pbox(0.68,0.12,0.54, fur),   0,0.82,0);      // white collar trim
-  add(pbox(0.16,0.16,0.14, patch), 0,0.7,0.28);    // goreum bow
-
-  // --- sleeves + white paws holding the tteok skewer ---
-  add(pbox(0.18,0.34,0.22, cloth), -0.43,0.62,0.02);
-  add(pbox(0.18,0.34,0.22, cloth),  0.43,0.62,0.02);
-  add(pbox(0.17,0.16,0.2, fur),    -0.3,0.5,0.3);
-  add(pbox(0.17,0.16,0.2, fur),     0.3,0.5,0.3);
-  // tteok skewer (떡꼬치) held across the front
-  add(pbox(0.55,0.06,0.06, stick), 0,0.56,0.34);
-  [-0.17,0,0.17].forEach((sx,i)=>{
-    add(pbox(0.17,0.17,0.17, i%2? 0xffd9e0 : 0xfff5ef), sx,0.6,0.34);
+   >>> HOW TO USE YOUR OWN PNG ART <<<
+   Every entity is created from ASSETS[<key>], which is just an image URL.
+   To swap in your own pixel art, replace the value with either:
+     • a base64 data-URI:  ASSETS.hero = "data:image/png;base64,iVBOR..."
+       (recommended — keeps this a single self-contained file that runs on
+        double-click and on mobile with no server / no CORS issues), or
+     • an http(s) URL:     ASSETS.hero = "https://.../cat.png"
+   Loading a bare local path like  "C:\...\cat.png"  or  "./cat.png"  will
+   NOT work when the file is opened via file:// (browsers block WebGL
+   textures loaded cross-origin from file://) — use a data-URI instead, or
+   serve the folder over http.  The loader below already forces crisp pixels
+   (NearestFilter) and keeps the black outlines / pixel grid of the source.
+   ========================================================================= */
+const texLoader = new THREE.TextureLoader();
+const texCache = {};
+function loadTexture(url){
+  if(texCache[url]) return texCache[url];
+  const t = texLoader.load(url);
+  // crisp pixels — no blur when zoomed (keeps outlines + pixel detail)
+  t.magFilter = THREE.NearestFilter;
+  t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  texCache[url] = t;
+  return t;
+}
+// flat 2D billboard sprite; anchored at its bottom-centre so "feet" sit on ground
+function makeSprite(url, w, h, opts={}){
+  const m = new THREE.SpriteMaterial({
+    map: loadTexture(url),
+    transparent: true,
+    alphaTest: 0.2,          // cutout transparent texels (crisp edges), keep translucency
+    depthWrite: true,        // sizeAttenuation stays true -> world-unit sprites (ortho = no perspective shrink)
+    opacity: opts.opacity!==undefined?opts.opacity:1,
   });
+  if(opts.color!==undefined) m.color.setHex(opts.color);
+  m._noCache = true;
+  const sp = new THREE.Sprite(m);
+  sp.scale.set(w, h, 1);
+  sp.center.set(0.5, 0);     // bottom-centre anchor
+  return sp;
+}
+// flat translucent ground shadow (an ellipse on the floor)
+function makeShadow(rx){
+  const m = new THREE.MeshBasicMaterial({ color:0x1a1526, transparent:true, opacity:0.32, depthWrite:false });
+  m._noCache = true;
+  const mesh = new THREE.Mesh(GEO.circle, m);
+  mesh.rotation.x = -Math.PI/2;
+  mesh.scale.set(rx, rx*0.72, 1);   // flattened -> ellipse
+  mesh.renderOrder = -1;
+  return mesh;
+}
+// a billboard entity = sprite + its own ground shadow, grouped together
+function makeSpriteEntity(url, w, h, opts={}){
+  const g = new THREE.Group();
+  const shadow = makeShadow(opts.shadowR!==undefined?opts.shadowR : w*0.42);
+  shadow.position.y = 0.04;
+  g.add(shadow);
+  const sp = makeSprite(url, w, h, opts);
+  sp.position.y = 0.04;
+  g.add(sp);
+  g.userData = { sprite:sp, shadow, baseW:w, baseH:h, groundY:0.04, shadowRX:shadow.scale.x, shadowRZ:shadow.scale.y, facing:1 };
+  return g;
+}
+// hop animation shared by player + ghost: sprite rises, shadow stays & shrinks
+function applyHop(entity, hop, extraScale){
+  const u = entity.userData; if(!u || !u.sprite) return;
+  const sc = extraScale||1;
+  u.sprite.position.y = u.groundY + hop;
+  u.sprite.scale.set(u.baseW*sc*u.facing, u.baseH*sc, 1);
+  const k = Math.max(0.35, 1 - hop*0.4);           // shadow shrinks with height
+  u.shadow.scale.set(u.shadowRX*k*sc, u.shadowRZ*k*sc, 1);
+  u.shadow.material.opacity = 0.32 * Math.max(0.4, k);
+}
 
-  // --- head ---
-  add(pbox(0.58,0.52,0.54, fur), 0,1.06,0);
-  add(pbox(0.34,0.26,0.4, patch),  0.14,1.24,0.02);  // calico patch (top-right)
-  add(pbox(0.22,0.3,0.24, patch), -0.24,1.02,0.1);   // calico patch (left cheek)
-  // ears
-  const earL=add(pbox(0.2,0.24,0.14, fur), -0.2,1.42,0); earL.rotation.z=0.18;
-  const earR=add(pbox(0.2,0.24,0.14, patch), 0.2,1.42,0); earR.rotation.z=-0.18;
-  add(pbox(0.09,0.12,0.06, pink), -0.2,1.44,0.06);
-  add(pbox(0.09,0.12,0.06, pink),  0.2,1.44,0.06);
-  // face
-  add(pbox(0.11,0.15,0.06, 0x2a2530), -0.14,1.08,0.27);
-  add(pbox(0.11,0.15,0.06, 0x2a2530),  0.14,1.08,0.27);
-  add(pbox(0.04,0.05,0.04, fur), -0.16,1.12,0.31);
-  add(pbox(0.04,0.05,0.04, fur),  0.12,1.12,0.31);
-  add(pbox(0.08,0.06,0.06, pink), 0,1.0,0.29);        // nose
-  add(pbox(0.5,0.08,0.05, 0xffb3b3), 0,0.97,0.27);    // blush
+/* -------------------- Pixel-art generator (built-in PNG data-URIs) -------- */
+// Draws each entity onto a canvas, auto-adds a black outline, exports a PNG
+// data-URI. Result is fed through THREE.TextureLoader exactly like an external
+// PNG file, so swapping in real art is a one-line change (see ASSETS above).
+function outlinePng(W, H, drawFn, thick=1){
+  const inner = document.createElement('canvas'); inner.width=W; inner.height=H;
+  const ic = inner.getContext('2d'); ic.imageSmoothingEnabled=false;
+  drawFn(ic, (x,y,w,h,c)=>{ ic.fillStyle=c; ic.fillRect(x|0,y|0,w|0,h|0); });
+  // black silhouette of the drawn art
+  const sil = document.createElement('canvas'); sil.width=W; sil.height=H;
+  const sc = sil.getContext('2d'); sc.imageSmoothingEnabled=false;
+  sc.drawImage(inner,0,0);
+  sc.globalCompositeOperation='source-in'; sc.fillStyle='#241d2b'; sc.fillRect(0,0,W,H);
+  const out = document.createElement('canvas'); out.width=W; out.height=H;
+  const oc = out.getContext('2d'); oc.imageSmoothingEnabled=false;
+  for(let dx=-thick;dx<=thick;dx++) for(let dy=-thick;dy<=thick;dy++){ if(dx||dy) oc.drawImage(sil,dx,dy); }
+  oc.drawImage(inner,0,0);
+  return out.toDataURL('image/png');
+}
 
-  // --- gat (traditional hat) ---
-  add(pbox(0.98,0.06,0.98, hat), 0,1.5,0);            // wide brim
-  add(pbox(0.5,0.36,0.5, hat),   0,1.72,0);           // crown
-  add(pbox(0.52,0.07,0.52, 0x6b5a3a), 0,1.56,0);      // band
+// --- the calico-cat-in-hanbok hero (recolourable per skin) ---
+function drawHero(skin){
+  const fur   = '#f7f3ea';
+  const patch = '#'+(skin.body).toString(16).padStart(6,'0');
+  const cloth = '#'+(skin.cloth).toString(16).padStart(6,'0');
+  const hat   = '#'+(skin.horn).toString(16).padStart(6,'0');
+  const pants = '#39416e', pink='#ff8f88', blush='#ffb3b3', stick='#8a5a2b';
+  return outlinePng(56, 74, (ctx,P)=>{
+    // gat (hat)
+    P(21,2,14,11,hat);            // crown
+    P(9,12,38,5,hat);             // brim
+    P(19,9,4,4,hat); P(33,9,4,4,hat);
+    // ears
+    P(14,10,8,9,fur); P(34,10,8,9,patch);
+    P(16,13,3,4,pink); P(37,13,3,4,pink);
+    // head
+    P(13,16,30,22,fur);
+    P(30,16,13,10,patch);         // calico patch top-right
+    P(13,26,7,10,patch);          // calico patch left cheek
+    // eyes + nose + blush
+    P(19,24,5,7,'#2a2530'); P(32,24,5,7,'#2a2530');
+    P(20,25,2,2,'#ffffff'); P(33,25,2,2,'#ffffff');
+    P(26,31,4,3,pink);
+    P(15,31,7,3,blush); P(34,31,7,3,blush);
+    // hanbok jeogori
+    P(13,38,30,16,cloth);
+    P(13,38,30,3,fur);            // white collar
+    // rainbow sleeve accents
+    P(11,40,4,12,'#9ad0ff'); P(41,40,4,12,'#ffd08a');
+    P(26,44,4,4,patch);          // goreum bow knot
+    // paws + tteok skewer held across the front
+    P(12,46,7,6,fur); P(37,46,7,6,fur);
+    P(15,48,26,3,stick);
+    P(18,45,7,7,'#fff5ef'); P(26,45,7,7,'#ffd9e0'); P(34,45,6,7,'#fff5ef');
+    // baji (trousers) + feet
+    P(15,54,12,16,pants); P(29,54,12,16,pants);
+    P(15,68,12,4,fur); P(29,68,12,4,fur);
+    // tail (right side, striped)
+    P(42,44,7,4,patch); P(46,47,5,4,fur); P(47,51,5,4,patch); P(46,55,5,4,fur);
+  }, 1);
+}
 
-  // --- tail ---
-  const t1=add(pbox(0.16,0.16,0.42, patch), 0.28,0.42,-0.34); t1.rotation.x=0.5;
-  const t2=add(pbox(0.15,0.15,0.3, fur),    0.38,0.72,-0.5);  t2.rotation.x=0.9;
+// --- items ---
+function drawTteok(){
+  return outlinePng(30,34,(c,P)=>{
+    P(6,4,4,26,'#8a5a2b');            // skewer stick
+    P(10,3,16,9,'#fff5ef'); P(9,12,18,9,'#ffd9e0'); P(10,21,16,9,'#fff5ef');
+    P(13,6,4,3,'#ffffff');
+  },1);
+}
+function drawChili(){
+  return outlinePng(28,34,(c,P)=>{
+    P(11,3,6,5,'#5fae74');            // stem
+    P(13,1,3,5,'#4d8f5f');
+    P(9,8,11,10,'#e5484d'); P(11,17,9,9,'#e5484d'); P(13,25,6,6,'#c53a3f');
+    P(11,10,3,4,'#ff8f88');
+  },1);
+}
+function drawGiant(){ // 부적 talisman charm
+  return outlinePng(28,34,(c,P)=>{
+    P(6,2,16,30,'#ffd24a');
+    P(6,2,16,4,'#e5a91f'); P(6,28,16,4,'#e5a91f');
+    P(11,7,6,6,'#e5484d'); P(11,15,6,3,'#e5484d'); P(11,20,6,6,'#e5484d');
+  },1);
+}
 
-  g.userData.parts = {};
+// --- obstacles / mobs ---
+function drawGuard(){ // 궁궐 근위병 (royal guard)
+  return outlinePng(40,58,(c,P)=>{
+    P(6,2,7,44,'#b07a3c'); P(4,0,11,6,'#d0d0da'); // spear
+    P(12,44,16,14,'#33344a');       // legs/boots
+    P(9,26,22,20,'#e5484d');        // red robe
+    P(9,26,22,4,'#ffd36e');         // sash
+    P(14,16,14,12,'#ffd8b0');       // face
+    P(17,20,3,3,'#2a2530'); P(23,20,3,3,'#2a2530');
+    P(11,10,20,7,'#2a2530');        // gat brim
+    P(16,3,10,8,'#2a2530');         // gat crown
+    P(19,0,4,4,'#ff9aa2');          // feather
+  },1);
+}
+function drawPalanquin(){ // 가마 (noble palanquin)
+  return outlinePng(64,52,(c,P)=>{
+    P(2,26,60,6,'#8a5a2b');         // carry pole
+    P(14,14,36,26,'#8a3d3d');       // cabin
+    P(24,20,16,14,'#2a2540');       // window
+    P(10,6,44,10,'#ffd36e');        // roof
+    P(28,0,8,7,'#e5484d');          // finial
+    P(14,36,36,4,'#6e2f2f');
+  },1);
+}
+function drawTurtle(){ // 거북 신령 (divine turtle raft)
+  return outlinePng(64,34,(c,P)=>{
+    P(4,14,52,16,'#5f8f5a');        // shell base
+    P(12,6,38,12,'#7ab074');        // shell dome
+    P(22,9,18,7,'#4d7a4a');         // pattern
+    P(52,14,10,9,'#9ec98c');        // head
+    P(57,16,3,3,'#222222');         // eye
+    P(8,28,8,5,'#5f8f5a'); P(40,28,8,5,'#5f8f5a'); // flippers
+  },1);
+}
+function drawTree(){ // 고목 (ancient tree)
+  return outlinePng(44,58,(c,P)=>{
+    P(17,40,10,18,'#8a5a2b');       // trunk
+    P(4,10,36,26,'#5fae74');        // canopy
+    P(12,2,22,16,'#74c98c');
+    P(10,16,8,8,'#4d9463'); P(28,22,7,7,'#4d9463');
+  },1);
+}
+function drawRock(){ // 바위 (boulder)
+  return outlinePng(44,36,(c,P)=>{
+    P(4,12,36,22,'#a9a9b8');
+    P(12,4,20,12,'#c0c0cc');
+    P(8,16,10,8,'#8f8f9e'); P(26,20,10,8,'#8f8f9e');
+  },1);
+}
+
+// Built-in assets (generated at boot). Replace any value with your own PNG.
+const ASSETS = {};
+const heroTexCache = {};
+function heroUrlFor(skin){
+  if(!heroTexCache[skin.id]) heroTexCache[skin.id] = drawHero(skin);
+  return heroTexCache[skin.id];
+}
+function buildAssets(){
+  ASSETS.tteok     = drawTteok();
+  ASSETS.chili     = drawChili();
+  ASSETS.giant     = drawGiant();
+  ASSETS.guard     = drawGuard();
+  ASSETS.palanquin = drawPalanquin();
+  ASSETS.turtle    = drawTurtle();
+  ASSETS.tree      = drawTree();
+  ASSETS.rock      = drawRock();
+  ASSETS.hero      = heroUrlFor(SKINS[0]);
+}
+
+/* -------------------- Character builder (2D sprite billboard) -------------------- */
+// The hero is a flat pixel-art PNG (calico cat in hanbok) shown as a THREE.Sprite
+// with its own ground shadow. Ghost mode reuses the same art tinted luminous blue.
+function buildDokkaebi(skin, ghost=false){
+  const url = heroUrlFor(skin);
+  const g = makeSpriteEntity(url, 1.35, 1.78, {
+    shadowR: 0.5,
+    color: ghost ? 0x7fb0ff : undefined,
+    opacity: ghost ? 0.55 : 1,
+  });
   g.userData.skin = skin;
+  g.userData.ghost = ghost;
   return g;
 }
 
@@ -534,15 +706,17 @@ function burstSparkle(x,z,color,count){
         spin:6, emissive:color });
   }
 }
-function motionTrail(fromModel, x,y,z){
-  // semi-transparent silhouette that fades super fast
-  const s = new THREE.Mesh(GEO.box, new THREE.MeshLambertMaterial({
-    color:0xffffff, transparent:true, opacity:0.4, emissive:0x88bbff }));
-  s.scale.set(0.6,1.1,0.55);
-  s.position.set(x,y+0.6,z);
-  s.castShadow=false;
+function motionTrail(x,y,z,facing){
+  // fading translucent copy of the hero sprite (dodge / dash trail)
+  const m = new THREE.SpriteMaterial({ map: loadTexture(ASSETS.hero), transparent:true,
+    opacity:0.4, depthWrite:false, color:0x9fd0ff });
+  m._noCache = true;
+  const s = new THREE.Sprite(m);
+  s.center.set(0.5,0);
+  s.scale.set(1.35*(facing||1), 1.78, 1);
+  s.position.set(x, y+0.04, z);
   scene.add(s);
-  particles.push({ mesh:s, vx:0,vy:0,vz:0, gravity:0, life:0.18, maxLife:0.18, spin:0, shrink:false });
+  particles.push({ mesh:s, vx:0,vy:0,vz:0, gravity:0, life:0.16, maxLife:0.16, spin:0, shrink:false });
 }
 
 /* -------------------- Lane / World management -------------------- */
@@ -639,15 +813,7 @@ function makeLane(row){
           if(occupied.size >= (COL_MAX-COL_MIN-1)) break;
           occupied.add(x);
           const kind = ((currentGameMode==='timeattack'? rowRand(row,x*13):Math.random())<0.5)?'tree':'rock';
-          const obs = new THREE.Group();
-          if(kind==='tree'){
-            const trunk=box(0.3,0.7,0.3,0x8a5a2b); trunk.position.y=0.35; obs.add(trunk);
-            const leaf=box(1,1,1,0x5fae74); leaf.position.y=1.1; obs.add(leaf);
-            const leaf2=box(0.7,0.7,0.7,0x74c98c); leaf2.position.y=1.7; obs.add(leaf2);
-          } else {
-            const r1=box(0.9,0.7,0.9,0xa9a9b8); r1.position.y=0.35; obs.add(r1);
-            const r2=box(0.5,0.4,0.5,0xc0c0cc); r2.position.set(0.15,0.75,0.1); obs.add(r2);
-          }
+          const obs = (kind==='tree') ? buildTree() : buildRock();
           obs.position.set(x,0,0); g.add(obs);
           lane.statics[x] = { kind, group:obs, solid:true };
         }
@@ -656,10 +822,7 @@ function makeLane(row){
     // border trees to frame the road
     [-RENDER_HALF+1,-RENDER_HALF+2, RENDER_HALF-1, RENDER_HALF-2].forEach(x=>{
       if(x>COL_MAX || x<COL_MIN){
-        const t=new THREE.Group();
-        const trunk=box(0.3,0.7,0.3,0x8a5a2b); trunk.position.y=0.35; t.add(trunk);
-        const leaf=box(1,1.1,1,0x5fae74); leaf.position.y=1.15; t.add(leaf);
-        t.position.set(x,0,0); g.add(t);
+        const t=buildTree(); t.position.set(x,0,0); g.add(t);
       }
     });
     // tteok pickups (rice cakes) sometimes
@@ -688,7 +851,7 @@ function makeLane(row){
     for(let i=0;i<count;i++){
       const mob = (type==='dirt') ? buildPalanquin() : buildGuard();
       mob.position.set(-RENDER_HALF-1 + i*gap + rowRand(row,i*3)*1.5, 0, 0);
-      if(dir<0) mob.rotation.y = Math.PI;
+      if(dir<0){ mob.userData.facing=-1; mob.userData.sprite.scale.x *= -1; }
       g.add(mob);
       lane.mobs.push({ model:mob, type:(type==='dirt'?'palanquin':'guard'), w:(type==='dirt'?1.5:0.9), dead:false });
     }
@@ -717,58 +880,26 @@ function makeLane(row){
   return lane;
 }
 
+// items are billboard sprites too (with a small ground shadow)
+const ITEM_SPRITE = {
+  tteok: { key:'tteok', w:0.75, h:0.85, shadowR:0.28 },
+  chili: { key:'chili', w:0.6,  h:0.85, shadowR:0.24 },
+  giant: { key:'giant', w:0.65, h:0.8,  shadowR:0.26 },
+};
 function spawnItem(parent, x, kind){
-  const grp = new THREE.Group();
-  if(kind==='tteok'){
-    const b=box(0.42,0.42,0.42,0xfff2f6,{emissive:0x553344}); b.position.y=0.62; grp.add(b);
-    const stripe=box(0.44,0.1,0.44,0xff9aa2); stripe.position.y=0.62; grp.add(stripe);
-  } else if(kind==='chili'){
-    const b=box(0.22,0.55,0.22,0xe5484d,{emissive:0x551111}); b.position.y=0.6; b.rotation.z=0.3; grp.add(b);
-    const stem=box(0.12,0.16,0.12,0x5fae74); stem.position.set(-0.08,0.86,0); grp.add(stem);
-  } else if(kind==='giant'){
-    const b=box(0.5,0.5,0.15,0xffd36e,{emissive:0x554400}); b.position.y=0.65; grp.add(b);
-    const t=box(0.3,0.3,0.2,0xe5484d); t.position.set(0,0.65,0.02); t.rotation.z=Math.PI/4; grp.add(t);
-  }
+  const cfg = ITEM_SPRITE[kind];
+  const grp = makeSpriteEntity(ASSETS[cfg.key], cfg.w, cfg.h, { shadowR:cfg.shadowR });
   grp.position.set(x,0,0);
   grp.userData.kind = kind;
   parent.add(grp);
   return { kind, group:grp, taken:false, baseY:0 };
 }
 
-function buildPalanquin(){
-  const g=new THREE.Group();
-  const body=box(1.3,0.9,0.9,0x8a3d3d); body.position.y=0.85; g.add(body);
-  const roof=box(1.5,0.35,1.05,0xffd36e); roof.position.y=1.4; g.add(roof);
-  const knob=box(0.2,0.25,0.2,0xe5484d); knob.position.y=1.65; g.add(knob);
-  const pole1=box(2.1,0.12,0.12,0x8a5a2b); pole1.position.set(0,0.7,0.32); g.add(pole1);
-  const pole2=box(2.1,0.12,0.12,0x8a5a2b); pole2.position.set(0,0.7,-0.32); g.add(pole2);
-  const win=box(0.5,0.4,0.92,0x2a2540,{}); win.position.set(0,0.9,0); g.add(win);
-  return g;
-}
-function buildGuard(){
-  const g=new THREE.Group();
-  const legs=box(0.4,0.4,0.4,0x33344a); legs.position.y=0.2; g.add(legs);
-  const body=box(0.55,0.6,0.5,0xe5484d); body.position.y=0.7; g.add(body);
-  const head=box(0.4,0.4,0.4,0xffd8b0); head.position.y=1.15; g.add(head);
-  const hat=box(0.55,0.2,0.55,0x2a2540); hat.position.y=1.42; g.add(hat);
-  const feather=box(0.1,0.4,0.1,0xff9aa2); feather.position.set(0,1.65,0); g.add(feather);
-  const spear=box(0.1,1.6,0.1,0xb07a3c); spear.position.set(0.35,0.9,0); g.add(spear);
-  const tip=box(0.18,0.25,0.18,0xd0d0da); tip.position.set(0.35,1.75,0); g.add(tip);
-  return g;
-}
-function buildTurtle(){
-  const g=new THREE.Group();
-  const shell=box(1.9,0.42,1.0,0x5f8f5a); shell.position.y=0.16; g.add(shell);
-  const shellTop=box(1.35,0.3,0.72,0x7ab074); shellTop.position.y=0.44; g.add(shellTop);
-  const pattern=box(0.7,0.34,0.4,0x4d7a4a); pattern.position.y=0.46; g.add(pattern);
-  const head=box(0.34,0.34,0.4,0x9ec98c); head.position.set(1.05,0.16,0); g.add(head);
-  const eye=box(0.08,0.08,0.06,0x222222); eye.position.set(1.22,0.24,0.14); g.add(eye);
-  const l1=box(0.3,0.22,0.3,0x5f8f5a); l1.position.set(0.6,0.02,0.5); g.add(l1);
-  const l2=box(0.3,0.22,0.3,0x5f8f5a); l2.position.set(-0.6,0.02,0.5); g.add(l2);
-  const l3=box(0.3,0.22,0.3,0x5f8f5a); l3.position.set(0.6,0.02,-0.5); g.add(l3);
-  const l4=box(0.3,0.22,0.3,0x5f8f5a); l4.position.set(-0.6,0.02,-0.5); g.add(l4);
-  return g;
-}
+function buildPalanquin(){ return makeSpriteEntity(ASSETS.palanquin, 2.0, 1.6, { shadowR:0.9 }); }
+function buildGuard(){     return makeSpriteEntity(ASSETS.guard,     1.1, 1.6, { shadowR:0.4 }); }
+function buildTurtle(){    return makeSpriteEntity(ASSETS.turtle,    2.0, 1.05,{ shadowR:0.9 }); }
+function buildTree(){      return makeSpriteEntity(ASSETS.tree,      1.5, 2.0, { shadowR:0.5 }); }
+function buildRock(){      return makeSpriteEntity(ASSETS.rock,      1.15,0.95,{ shadowR:0.5 }); }
 
 /* -------------------- Player -------------------- */
 let player = null;         // THREE.Group model
@@ -791,7 +922,7 @@ function resetPlayer(){
   P.gridX=0; P.row=0; P.worldX=0; P.worldZ=0;
   P.jumping=false; P.jT=0; P.jDur=0.14; P.ridingTurtle=null; P.alive=true;
   player.position.set(0,0,0);
-  player.rotation.y = Math.PI; // face forward (-z)
+  player.visible = true;
 }
 
 /* -------------------- Game run variables -------------------- */
@@ -864,16 +995,17 @@ function tryMove(dx, drow){
   P.jumping = true; P.jT = 0;
   P.jDur = 0.14 / (run.chiliTimer>0 ? 1.5 : 1); // chili speeds jump anim +50%
 
+  // face left/right by mirroring the sprite
+  if(dx>0) player.userData.facing = 1;
+  else if(dx<0) player.userData.facing = -1;
+
   burstDust(P.fromX, P.fromZ);
-  if(dx!==0){ motionTrail(player, P.fromX, 0, P.fromZ); motionTrail(player, (P.fromX+P.toX)/2,0,P.fromZ); }
+  if(dx!==0){
+    motionTrail(P.fromX, 0, P.fromZ, player.userData.facing);
+    motionTrail((P.fromX+P.toX)/2, 0, P.fromZ, player.userData.facing);
+  }
   sfx.jump();
   run.idleTimer = 0;
-
-  // face direction
-  if(dx>0) player.rotation.y = -Math.PI/2;
-  else if(dx<0) player.rotation.y = Math.PI/2;
-  else if(drow>0) player.rotation.y = Math.PI;
-  else if(drow<0) player.rotation.y = 0;
 }
 
 function finishJump(){
@@ -1023,7 +1155,6 @@ function loadGhost(){
   run.ghostFinalRow = path[path.length-1].row;
   run.ghostIndex = 0;
   ghostModel = buildDokkaebi(currentSkin(), true);
-  ghostModel.rotation.y = Math.PI;
   scene.add(ghostModel);
   ghostModel.position.set(0,0,0);
 }
@@ -1033,7 +1164,8 @@ function updateGhost(dt){
   const t = run.elapsed;
   if(t >= path[path.length-1].t){
     const last = path[path.length-1];
-    ghostModel.position.set(last.x, 0.1, -last.row*TILE);
+    ghostModel.position.set(last.x, 0, -last.row*TILE);
+    applyHop(ghostModel, 0, 1);
     run.ghostRow = last.row;
     run.ghostDone = true;
     return;
@@ -1047,8 +1179,10 @@ function updateGhost(dt){
   const k = Math.min(1, (t - a.t)/span);
   const gx = a.x + (b.x - a.x)*k;
   const grow = a.row + (b.row - a.row)*k;
-  const hop = Math.sin(Math.min(1,k)*Math.PI) * 0.5;
-  ghostModel.position.set(gx, 0.1 + hop, -grow*TILE);
+  const hop = Math.sin(Math.min(1,k)*Math.PI) * 0.55;
+  if(b.x > a.x) ghostModel.userData.facing = 1; else if(b.x < a.x) ghostModel.userData.facing = -1;
+  ghostModel.position.set(gx, 0, -grow*TILE);
+  applyHop(ghostModel, hop, 1);
   run.ghostRow = grow;
 }
 
@@ -1072,7 +1206,7 @@ function ensureLanes(){
   }
 }
 function disposeLane(lane){
-  lane.group.traverse(o=>{ if(o.isMesh && o.material && o.material.dispose && o.material._noCache){ o.material.dispose(); } });
+  lane.group.traverse(o=>{ if((o.isMesh||o.isSprite) && o.material && o.material.dispose && o.material._noCache){ o.material.dispose(); } });
 }
 
 function updateMobs(dt){
@@ -1113,8 +1247,7 @@ function updateDecor(dt){
     for(const x in lane.items){
       const it = lane.items[x];
       if(it && it.group){
-        it.group.rotation.y += dt*2;
-        it.group.position.y = Math.sin(run.elapsed*3 + (+x))*0.08;
+        it.group.position.y = 0.14 + Math.sin(run.elapsed*3 + (+x))*0.1;  // float & bob
       }
     }
     // fever neon tint
@@ -1133,29 +1266,32 @@ function updateDecor(dt){
 
 /* -------------------- Player animation + fever halo -------------------- */
 function updatePlayerAnim(dt){
+  const u = player.userData;
+  u.facing = player.userData.facing || 1;
+  const giant = run.giantTimer>0 ? 2.5 : 1;
+  let hop = 0;
+
   if(P.jumping){
     P.jT += dt;
     let k = Math.min(1, P.jT/P.jDur);
     P.worldX = P.fromX + (P.toX-P.fromX)*k;
     P.worldZ = P.fromZ + (P.toZ-P.fromZ)*k;
-    const hop = Math.sin(k*Math.PI)*0.55;
-    player.position.set(P.worldX, hop, P.worldZ);
-    // squash/stretch
-    const sc = 1 + Math.sin(k*Math.PI)*0.15;
-    player.scale.set(1/Math.sqrt(sc), sc, 1/Math.sqrt(sc));
+    hop = Math.sin(k*Math.PI)*0.6;
+    player.position.set(P.worldX, 0, P.worldZ);
     if(k>=1) finishJump();
   } else {
-    const lift = P.ridingTurtle ? 0.45 : 0;   // sit on the turtle shell
+    const lift = P.ridingTurtle ? 0.42 : 0;    // sit on the turtle shell
     player.position.set(P.worldX, lift, P.worldZ);
-    const idle = 1 + Math.sin(run.elapsed*4)*0.02;
-    player.scale.set(1,idle,1);
+    hop = Math.sin(run.elapsed*4)*0.02;          // gentle idle bob
   }
-  // giant scale
-  let baseScale = run.giantTimer>0 ? 2.5 : 1;
-  player.scale.multiplyScalar(baseScale);
-  // stealth transparency
-  const targetOp = run.stealthTimer>0 ? 0.35 : 1;
-  player.traverse(o=>{ if(o.isMesh){ o.material.transparent = targetOp<1; o.material.opacity = targetOp; } });
+
+  // sprite rises with the hop; shadow stays on the ground and shrinks (fake 3D)
+  applyHop(player, Math.max(0,hop), giant);
+
+  // stealth transparency (sprite only — never touches world sprites)
+  const targetOp = run.stealthTimer>0 ? 0.4 : 1;
+  u.sprite.material.opacity = targetOp;
+
   // fever halo
   if(feverActive && Math.random()<0.6){
     const a=Math.random()*Math.PI*2;
@@ -1520,40 +1656,24 @@ window.addEventListener('resize', ()=>{
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-/* -------------------- Menu mascot pixel drawing -------------------- */
+/* -------------------- Menu mascot (renders the hero sprite crisply) -------------------- */
 function drawMascot(){
-  // calico cat in a hanbok, wearing a gat, holding a tteok skewer
   const c = el('mascot'); const ctx = c.getContext('2d');
-  ctx.imageSmoothingEnabled=false;
-  const px=(x,y,w,h,col)=>{ ctx.fillStyle=col; ctx.fillRect(x,y,w,h); };
-  ctx.clearRect(0,0,64,64);
-  // gat (hat)
-  px(14,4,36,4,'#2a2530');           // brim
-  px(24,-2,16,8,'#2a2530');          // crown
-  // ears
-  px(18,8,7,7,'#f7f3ea'); px(39,8,7,7,'#e8a95c');
-  px(20,10,3,3,'#ff8f88'); px(41,10,3,3,'#ff8f88');
-  // head
-  px(16,12,32,22,'#f7f3ea');
-  px(34,12,14,10,'#e8a95c');         // calico patch
-  // eyes + nose
-  px(23,20,5,6,'#2a2530'); px(36,20,5,6,'#2a2530');
-  px(30,26,4,3,'#ff8f88');
-  px(19,27,10,3,'#ffb3b3'); px(35,27,10,3,'#ffb3b3'); // blush
-  // hanbok body
-  px(19,34,26,16,'#ff9aa2');
-  px(19,34,26,3,'#f7f3ea');          // collar
-  // paws + tteok skewer
-  px(16,42,6,6,'#f7f3ea'); px(42,42,6,6,'#f7f3ea');
-  px(20,44,24,4,'#8a5a2b');          // stick
-  px(23,42,7,7,'#fff5ef'); px(31,42,7,7,'#ffd9e0'); // tteok balls
-  // baji (trousers)
-  px(21,50,9,10,'#39416e'); px(34,50,9,10,'#39416e');
-  px(21,58,9,4,'#f7f3ea'); px(34,58,9,4,'#f7f3ea'); // feet
+  const img = new Image();
+  img.onload = ()=>{
+    ctx.imageSmoothingEnabled=false;
+    ctx.clearRect(0,0,64,64);
+    // fit the 56x74 hero into 64x64 keeping aspect + crisp pixels
+    const s = Math.min(64/img.width, 64/img.height);
+    const w = Math.round(img.width*s), h = Math.round(img.height*s);
+    ctx.drawImage(img, Math.round((64-w)/2), Math.round((64-h)/2), w, h);
+  };
+  img.src = heroUrlFor(SKINS[0]);
 }
 
 /* -------------------- Boot -------------------- */
 function boot(){
+  buildAssets();          // generate all pixel-art PNG data-URIs first
   initThree();
   clock = new THREE.Clock();
   bindInput();
