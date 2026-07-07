@@ -542,12 +542,76 @@ function drawGate(){
 /* ---------- Sprite cache ---------- */
 const SPR = {};
 const heroCache = {};
-function heroSprite(skin){ if(!heroCache[skin.id]) heroCache[skin.id]=drawHero(skin); return heroCache[skin.id]; }
+function heroSprite(skin){
+  if(RES.hero) return RES.hero;                 // real GitHub art (one sprite for all skins)
+  if(!heroCache[skin.id]) heroCache[skin.id]=drawHero(skin);
+  return heroCache[skin.id];
+}
 function buildSprites(){
   SPR.guard=drawGuard(); SPR.palanquin=drawPalanquin(); SPR.turtle=drawTurtle();
   SPR.tree=drawTree(); SPR.rock=drawRock();
   SPR.tteok=drawTteok(); SPR.chili=drawChili(); SPR.giant=drawCharm();
   SPR.eagle=drawEagle(); SPR.gate=drawGate();
+}
+
+/* =========================================================================
+   GITHUB IMAGE RESOURCES
+   Load the uploaded PNGs from the repo (raw.githubusercontent.com sends
+   CORS headers, so this works even from file://). Each has a solid white
+   background, so it is flood-filled to transparent and auto-cropped to its
+   content, then used directly as a 2D-canvas sprite (still crisp: drawn with
+   imageSmoothingEnabled=false). Missing files keep the in-code pixel sprites.
+     main character.png -> hero (all skins)
+     ssotoek.png / 붕어빵.png -> 떡 pickup (randomly one of the two)
+     Gama 1..4.png -> palanquin obstacles (random per instance)
+   ========================================================================= */
+const RES = { gama:[] };
+function chromaKeyTrim(img){
+  const w=img.width, h=img.height;
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  const cx=c.getContext('2d'); cx.imageSmoothingEnabled=false; cx.drawImage(img,0,0);
+  const id=cx.getImageData(0,0,w,h), d=id.data;
+  const isBg=i=> d[i]>232 && d[i+1]>232 && d[i+2]>232;
+  const seen=new Uint8Array(w*h), stack=[];
+  for(let px=0;px<w;px++){ stack.push(px,(h-1)*w+px); }
+  for(let py=0;py<h;py++){ stack.push(py*w, py*w+(w-1)); }
+  while(stack.length){ const idx=stack.pop(); if(seen[idx])continue; const i=idx*4; if(!isBg(i))continue;
+    seen[idx]=1; d[i+3]=0; const px=idx%w, py=(idx-px)/w;
+    if(px+1<w)stack.push(idx+1); if(px-1>=0)stack.push(idx-1); if(py+1<h)stack.push(idx+w); if(py-1>=0)stack.push(idx-w); }
+  cx.putImageData(id,0,0);
+  let minx=w,miny=h,maxx=0,maxy=0,found=false;
+  for(let py=0;py<h;py++)for(let px=0;px<w;px++){ if(d[(py*w+px)*4+3]>16){ found=true;
+    if(px<minx)minx=px; if(px>maxx)maxx=px; if(py<miny)miny=py; if(py>maxy)maxy=py; } }
+  if(!found){ minx=0;miny=0;maxx=w-1;maxy=h-1; }
+  const tw=maxx-minx+1, th=maxy-miny+1;
+  const out=document.createElement('canvas'); out.width=tw; out.height=th;
+  out.getContext('2d').drawImage(c, minx,miny,tw,th, 0,0,tw,th);
+  return out;
+}
+function loadGitHubResources(){
+  const base='https://raw.githubusercontent.com/isabella9402/mini-game/main/resources/';
+  const files={ hero:'main character.png', tteok:'ssotoek.png', bungeoppang:'붕어빵.png',
+    gama1:'Gama 1.png', gama2:'Gama 2.png', gama3:'Gama 3.png', gama4:'Gama 4.png' };
+  Object.keys(files).forEach(key=>{
+    const img=new Image(); img.crossOrigin='anonymous';
+    img.onload=()=>{ try{
+      const cv=tagId(chromaKeyTrim(img));
+      if(key.startsWith('gama')) RES.gama.push(cv); else RES[key]=cv;
+      if(key==='hero') drawMascot();
+    }catch(e){} };
+    img.onerror=()=>{};
+    img.src=base+encodeURIComponent(files[key]);
+  });
+}
+function itemSprite(it){
+  if(it.kind==='chili') return SPR.chili;
+  if(it.kind==='giant') return SPR.giant;
+  if(it.visual==='bungeoppang' && RES.bungeoppang) return RES.bungeoppang;
+  return RES.tteok || SPR.tteok;
+}
+function palanquinSprite(m){
+  if(RES.gama.length) return RES.gama[m.variant % RES.gama.length];
+  return SPR.palanquin;
 }
 
 /* =========================================================================
@@ -678,7 +742,7 @@ function makeLane(row){
     for(let i=0;i<count;i++){
       const isPal = (type==='dirt');
       lane.mobs.push({ x:-(COL_MAX+3)+i*gap+rowRand(row,i*3)*1.5, kind:isPal?'palanquin':'guard',
-        w: isPal?2.2:1.0, flip:dir<0, dead:false });
+        w: isPal?2.2:1.0, flip:dir<0, dead:false, variant: Math.floor(rowRand(row,i*17)*4) });
     }
   }
   // turtles on rivers
@@ -700,7 +764,7 @@ function makeLane(row){
         const x=cols[(rnd(202)*cols.length)|0];
         const r=rnd(303);
         const kind = r<0.68?'tteok' : r<0.88?'chili' : 'giant';
-        lane.items[x]={ kind, taken:false };
+        lane.items[x]={ kind, taken:false, visual: kind==='tteok' ? (rnd(x*5)<0.5?'bungeoppang':'tteok') : kind };
       }
     }
   }
@@ -1045,15 +1109,16 @@ function drawEntity(d){
     return;
   }
   if(d.kind==='item'){
-    const spr = d.it.kind==='tteok'?SPR.tteok : d.it.kind==='chili'?SPR.chili : SPR.giant;
+    const spr = itemSprite(d.it);
+    const h = d.it.kind==='tteok' ? 0.85 : 0.95;
     const bob = 0.14 + Math.sin(run.elapsed*3 + d.col)*0.1;
     drawShadow(d.col, d.row, 0.28, 1, 0.22);
-    blit(spr, d.col, d.row, 0.95, { hop:bob });
+    blit(spr, d.col, d.row, h, { hop:bob });
     return;
   }
   if(d.kind==='mob'){
     const m=d.m;
-    const spr = m.kind==='palanquin'?SPR.palanquin : m.kind==='turtle'?SPR.turtle : SPR.guard;
+    const spr = m.kind==='palanquin'?palanquinSprite(m) : m.kind==='turtle'?SPR.turtle : SPR.guard;
     const h = m.kind==='palanquin'?1.7 : m.kind==='turtle'?1.05 : 1.55;
     drawShadow(m.x, d.row, (spr.width/spr.height)*h*0.32, 1, 0.25);
     blit(spr, m.x, d.row, h, { flip:m.flip });
@@ -1281,6 +1346,7 @@ function drawMascot(){
 function boot(){
   resize();
   buildSprites();
+  loadGitHubResources();     // swap in the real GitHub PNGs (fallback to pixel art if offline)
   bindInput();
   drawMascot();
   showScreen('menu');
