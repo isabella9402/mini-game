@@ -1,0 +1,1501 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>K-판타지: 꼬마 도깨비의 모험</title>
+<!-- Three.js (stable r128, cdnjs) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root{
+    --peach:#ffb7b2;
+    --peach-d:#ff8f88;
+    --mint:#b5ead7;
+    --mint-d:#7fcbb0;
+    --yellow:#fdfd96;
+    --yellow-d:#e8e05a;
+    --sky:#c7ceea;
+    --pink:#ff9aa2;
+    --ink:#4b3b57;
+    --paper:#fff6f0;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#12101a; }
+  body{
+    font-family:"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR","맑은 고딕",sans-serif;
+    color:var(--ink);
+    user-select:none; -webkit-user-select:none;
+    image-rendering:pixelated;
+    touch-action:none;
+  }
+  #game-canvas{ position:fixed; inset:0; display:block; }
+
+  /* ---------- Pixel/retro helpers ---------- */
+  .pixel-panel{
+    background:var(--paper);
+    border:4px solid var(--ink);
+    box-shadow:0 6px 0 rgba(75,59,87,.35), inset 0 0 0 4px #fff;
+    border-radius:6px;
+  }
+  .pbtn{
+    font-family:inherit; font-weight:900; letter-spacing:.5px;
+    border:4px solid var(--ink); border-radius:8px;
+    padding:14px 18px; cursor:pointer; color:var(--ink);
+    box-shadow:0 5px 0 var(--ink); transition:transform .05s, box-shadow .05s;
+    -webkit-user-select:none;
+  }
+  .pbtn:active{ transform:translateY(4px); box-shadow:0 1px 0 var(--ink); }
+  .pbtn.peach{ background:var(--peach); }
+  .pbtn.mint{ background:var(--mint); }
+  .pbtn.yellow{ background:var(--yellow); }
+  .pbtn.sky{ background:var(--sky); }
+  .pbtn.pink{ background:var(--pink); }
+
+  .overlay{ position:fixed; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; padding:18px; z-index:20; }
+  .hidden{ display:none !important; }
+
+  /* ---------- Start Menu ---------- */
+  #menu{ background:
+      radial-gradient(120% 90% at 50% -10%, rgba(255,183,178,.55), transparent 60%),
+      linear-gradient(160deg,#ffe3ec 0%, #e7f6ef 45%, #fff8d6 100%);
+    overflow-y:auto;
+  }
+  #title{
+    text-align:center; line-height:1.1; margin-bottom:6px;
+    text-shadow:3px 3px 0 #fff, 6px 6px 0 rgba(75,59,87,.25);
+  }
+  #title .big{ font-size:clamp(28px,8vw,54px); font-weight:900; color:var(--peach-d); display:block; }
+  #title .sub{ font-size:clamp(16px,4.5vw,26px); font-weight:900; color:var(--mint-d); display:block; margin-top:4px; }
+  #mascot{ width:110px; height:110px; margin:4px 0 10px; image-rendering:pixelated; }
+  .menu-btns{ display:flex; flex-direction:column; gap:12px; width:min(340px,86vw); }
+  .menu-btns .pbtn{ font-size:20px; }
+  #tutorial{ margin-top:16px; max-width:min(420px,90vw); text-align:center; font-size:13px;
+    line-height:1.6; padding:12px 14px; }
+  #tutorial b{ color:var(--peach-d); }
+  #tteok-menu{ margin-top:12px; font-weight:900; font-size:16px; color:var(--ink);
+    background:#fff; border:3px solid var(--ink); border-radius:20px; padding:6px 16px; }
+
+  /* ---------- HUD ---------- */
+  #hud{ position:fixed; inset:0; z-index:15; pointer-events:none; }
+  #hud .tl{ position:absolute; top:calc(env(safe-area-inset-top,0) + 12px); left:12px; }
+  #hud .score-box{ background:rgba(255,255,255,.85); border:3px solid var(--ink); border-radius:10px;
+    padding:8px 12px; font-weight:900; }
+  #hud .score-box .row{ font-size:18px; }
+  #hud .score-box .tteok{ font-size:15px; color:var(--peach-d); margin-top:2px; }
+
+  #center-top{ position:absolute; top:calc(env(safe-area-inset-top,0) + 12px); left:50%;
+    transform:translateX(-50%); text-align:center; }
+  #timer-box{ background:rgba(75,59,87,.9); color:#fff; border:3px solid #fff; border-radius:10px;
+    padding:6px 14px; font-weight:900; font-size:22px; }
+  #timer-box.warn{ background:#e5484d; animation:pulse .5s infinite alternate; }
+  @keyframes pulse{ from{transform:translateX(0) scale(1);} to{transform:scale(1.08);} }
+  #ghost-box{ margin-top:6px; background:rgba(80,150,255,.9); color:#fff; border:3px solid #fff;
+    border-radius:10px; padding:5px 12px; font-weight:900; font-size:14px; }
+
+  /* Fever gauge */
+  #fever-wrap{ position:absolute; top:calc(env(safe-area-inset-top,0) + 12px); right:12px; width:150px; }
+  #fever-label{ font-size:12px; font-weight:900; color:var(--ink); text-shadow:1px 1px 0 #fff; text-align:right; }
+  #fever-bar{ height:18px; background:rgba(255,255,255,.7); border:3px solid var(--ink); border-radius:10px;
+    overflow:hidden; margin-top:2px; }
+  #fever-fill{ height:100%; width:0%; background:linear-gradient(90deg,#ffd36e,#ff7ea8,#8ad0ff);
+    transition:width .15s; }
+  #fever-wrap.on #fever-fill{ animation:feverGlow .4s infinite alternate; }
+  @keyframes feverGlow{ from{filter:brightness(1);} to{filter:brightness(1.4);} }
+
+  /* Controls */
+  #controls{ position:absolute; bottom:calc(env(safe-area-inset-bottom,0) + 16px); left:0; right:0;
+    display:flex; justify-content:space-between; align-items:flex-end; padding:0 18px; pointer-events:none; }
+  #dpad{ position:relative; width:150px; height:150px; pointer-events:auto; }
+  #dpad .db{ position:absolute; width:50px; height:50px; font-size:22px; display:flex;
+    align-items:center; justify-content:center; background:rgba(255,255,255,.85);
+    border:3px solid var(--ink); border-radius:10px; box-shadow:0 4px 0 var(--ink); font-weight:900; }
+  #dpad .db:active{ transform:translateY(3px); box-shadow:0 1px 0 var(--ink); }
+  #d-up{ left:50px; top:0; } #d-down{ left:50px; top:100px; }
+  #d-left{ left:0; top:50px; } #d-right{ left:100px; top:50px; }
+  #skill-btn{ pointer-events:auto; width:96px; height:96px; border-radius:50%;
+    background:radial-gradient(circle at 40% 35%, #cfe8ff, #6aa8ff); border:4px solid var(--ink);
+    color:#183a6b; font-weight:900; font-size:16px; box-shadow:0 6px 0 var(--ink);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  #skill-btn:active{ transform:translateY(4px); box-shadow:0 2px 0 var(--ink); }
+  #skill-btn.cool{ filter:grayscale(.7) brightness(.85); }
+  #skill-btn .cd{ font-size:13px; }
+
+  /* ---------- Gacha / Costume ---------- */
+  #gacha{ background:rgba(30,24,44,.72); }
+  #gacha .box{ width:min(460px,94vw); max-height:88vh; overflow-y:auto; padding:16px; }
+  #gacha h2{ text-align:center; margin:2px 0 6px; color:var(--peach-d); font-size:24px; }
+  #gacha .tteok-line{ text-align:center; font-weight:900; margin-bottom:10px; }
+  #gacha-roll{ display:block; width:100%; font-size:18px; margin-bottom:12px; }
+  #gacha-result{ text-align:center; min-height:26px; font-weight:900; margin-bottom:10px; color:var(--mint-d); }
+  #skin-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; }
+  .skin-card{ border:3px solid var(--ink); border-radius:10px; padding:8px; text-align:center;
+    background:#fff; position:relative; }
+  .skin-card .sw{ width:44px; height:44px; margin:2px auto 6px; border-radius:8px; border:2px solid var(--ink); }
+  .skin-card .nm{ font-size:13px; font-weight:900; }
+  .skin-card .rr{ font-size:11px; font-weight:900; margin:2px 0 6px; }
+  .rr.C{ color:#8a8a8a;} .rr.R{ color:#3f8bd8;} .rr.SSR{ color:#e0952b;}
+  .skin-card.locked{ opacity:.45; }
+  .skin-card .st{ font-size:11px; font-weight:900; }
+  .skin-card .eqbtn{ font-size:12px; padding:6px 8px; border-radius:6px; margin-top:2px; }
+  .skin-card.equipped{ box-shadow:0 0 0 4px var(--yellow-d); }
+  #gacha-close{ display:block; width:100%; margin-top:14px; font-size:18px; }
+
+  /* ---------- Result ---------- */
+  #result{ background:rgba(30,24,44,.78); }
+  #result .box{ width:min(400px,90vw); padding:22px 18px; text-align:center; }
+  #result .headline{ font-size:34px; font-weight:900; margin-bottom:6px; }
+  #result .headline.win{ color:var(--mint-d);} #result .headline.lose{ color:var(--peach-d); }
+  #result .rank{ font-size:22px; font-weight:900; margin:6px 0; }
+  #result .rank .grade{ font-size:44px; color:var(--yellow-d); text-shadow:2px 2px 0 var(--ink); }
+  #result .stats{ font-size:16px; font-weight:900; margin:10px 0; line-height:1.7; }
+  #result .btns{ display:flex; gap:10px; margin-top:14px; }
+  #result .btns .pbtn{ flex:1; font-size:17px; }
+
+  .toast{ position:fixed; top:34%; left:50%; transform:translateX(-50%);
+    background:rgba(75,59,87,.92); color:#fff; padding:10px 18px; border-radius:12px;
+    font-weight:900; z-index:30; border:3px solid #fff; pointer-events:none; opacity:0;
+    transition:opacity .2s; }
+  .toast.show{ opacity:1; }
+</style>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<!-- ================= START MENU ================= -->
+<div id="menu" class="overlay">
+  <div id="title">
+    <span class="big">K-판타지</span>
+    <span class="sub">꼬마 도깨비의 모험</span>
+  </div>
+  <canvas id="mascot" width="64" height="64"></canvas>
+  <div class="menu-btns">
+    <button class="pbtn peach" data-mode="infinite">무한 모드</button>
+    <button class="pbtn mint" data-mode="timeattack">타임어택 모드</button>
+    <button class="pbtn sky" data-mode="ghost">고스트 레이스</button>
+    <button class="pbtn yellow" id="open-gacha">도감 &amp; 가챠</button>
+  </div>
+  <div id="tteok-menu">🍡 보유 떡: <span id="menu-tteok">0</span>개</div>
+  <div id="tutorial" class="pixel-panel">
+    <b>조작 방법:</b> 화면 터치/드래그 또는 방향키 (▲▼◀▶)<br />
+    <b>은신 스킬:</b> [Shift] 키 / 스킬 버튼
+  </div>
+</div>
+
+<!-- ================= HUD ================= -->
+<div id="hud" class="hidden">
+  <div class="tl">
+    <div class="score-box">
+      <div class="row">점수: <span id="hud-score">0</span></div>
+      <div class="tteok">🍡 떡: <span id="hud-tteok">0</span></div>
+    </div>
+  </div>
+  <div id="center-top">
+    <div id="timer-box" class="hidden">남은 시간: <span id="hud-time">30</span>초</div>
+    <div id="ghost-box" class="hidden">고스트와의 거리: <span id="hud-ghost">0</span>칸</div>
+  </div>
+  <div id="fever-wrap">
+    <div id="fever-label">피버 게이지</div>
+    <div id="fever-bar"><div id="fever-fill"></div></div>
+  </div>
+  <div id="controls">
+    <div id="dpad">
+      <div class="db" id="d-up">▲</div>
+      <div class="db" id="d-down">▼</div>
+      <div class="db" id="d-left">◀</div>
+      <div class="db" id="d-right">▶</div>
+    </div>
+    <div id="skill-btn"><div>은신</div><div class="cd" id="skill-cd">준비</div></div>
+  </div>
+</div>
+
+<!-- ================= GACHA / COSTUME ================= -->
+<div id="gacha" class="overlay hidden">
+  <div class="box pixel-panel">
+    <h2>도깨비 옷장 &amp; 가챠</h2>
+    <div class="tteok-line">🍡 보유 떡: <span id="gacha-tteok">0</span>개</div>
+    <button class="pbtn pink" id="gacha-roll">가챠 뽑기 (떡 100개)</button>
+    <div id="gacha-result"></div>
+    <div id="skin-grid"></div>
+    <button class="pbtn mint" id="gacha-close">닫기</button>
+  </div>
+</div>
+
+<!-- ================= RESULT ================= -->
+<div id="result" class="overlay hidden">
+  <div class="box pixel-panel">
+    <div class="headline" id="res-headline">게임 오버</div>
+    <div class="rank hidden" id="res-rank"></div>
+    <div class="stats" id="res-stats"></div>
+    <div class="btns">
+      <button class="pbtn mint" id="res-retry">다시 하기</button>
+      <button class="pbtn peach" id="res-menu">메인으로</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* =========================================================================
+   K-판타지: 꼬마 도깨비의 모험  —  Single-file 3D Voxel Runner
+   ========================================================================= */
+
+/* -------------------- Web Audio Retro SoundFX -------------------- */
+class SoundFX {
+  constructor(){ this.ctx=null; this.master=null; this.enabled=true; }
+  init(){
+    if(this.ctx) { if(this.ctx.state==='suspended') this.ctx.resume(); return; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if(!AC){ this.enabled=false; return; }
+    this.ctx = new AC();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.5;
+    this.master.connect(this.ctx.destination);
+  }
+  tone(freq, dur, type='square', vol=0.15, slideTo=null, delay=0){
+    if(!this.enabled || !this.ctx) return;
+    const t = this.ctx.currentTime + delay;
+    const o = this.ctx.createOscillator();
+    const g = this.ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo), t+dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+    o.connect(g).connect(this.master);
+    o.start(t); o.stop(t+dur+0.02);
+  }
+  noise(dur, vol=0.2, delay=0){
+    if(!this.enabled || !this.ctx) return;
+    const t = this.ctx.currentTime + delay;
+    const n = Math.floor(this.ctx.sampleRate*dur);
+    const buf = this.ctx.createBuffer(1, n, this.ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for(let i=0;i<n;i++){ d[i] = (Math.random()*2-1) * (1 - i/n); }
+    const src = this.ctx.createBufferSource(); src.buffer = buf;
+    const g = this.ctx.createGain(); g.gain.value = vol;
+    src.connect(g).connect(this.master); src.start(t);
+  }
+  jump(){ this.tone(420,0.11,'square',0.10,720); }
+  pickup(){ this.tone(880,0.08,'triangle',0.12,1320); this.tone(1320,0.06,'triangle',0.08,1760,0.05); }
+  chili(){ this.tone(280,0.18,'sawtooth',0.13,820); }
+  skill(){ this.tone(620,0.22,'sine',0.13,180); }
+  fever(){ [523,659,784,1046].forEach((f,i)=> this.tone(f,0.12,'square',0.13,null,i*0.08)); }
+  giant(){ this.tone(160,0.3,'sawtooth',0.14,420); }
+  smash(){ this.noise(0.18,0.22); this.tone(200,0.15,'square',0.12,80); }
+  crash(){ this.noise(0.22,0.25); this.tone(160,0.2,'square',0.14,60); }
+  lose(){ [440,349,262,196].forEach((f,i)=> this.tone(f,0.22,'square',0.14,null,i*0.14)); this.noise(0.3,0.15,0.5); }
+  win(){ [523,659,784,1046,1318].forEach((f,i)=> this.tone(f,0.16,'square',0.15,null,i*0.11)); this.tone(1046,0.4,'triangle',0.14,null,0.55); }
+}
+const sfx = new SoundFX();
+
+/* -------------------- Persistence helpers -------------------- */
+const LS = {
+  get(k, def){ try{ const v=localStorage.getItem(k); return v===null?def:JSON.parse(v); }catch(e){ return def; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+
+/* -------------------- Skin / Gacha data -------------------- */
+const SKINS = [
+  { id:'default',  name:'기본 도깨비', rarity:'C',   body:0x8fd9a8, cloth:0xff9aa2, horn:0xffd36e },
+  { id:'peach',    name:'복숭아 도깨비', rarity:'C', body:0xffb7b2, cloth:0xffe08a, horn:0xff7ea8 },
+  { id:'mint',     name:'민트 도깨비', rarity:'C',   body:0xb5ead7, cloth:0xa0c4ff, horn:0xfdfd96 },
+  { id:'butter',   name:'버터 도깨비', rarity:'C',   body:0xfdfd96, cloth:0xffb7b2, horn:0xffa552 },
+  { id:'sky',      name:'하늘 도깨비', rarity:'R',   body:0x9ec5ff, cloth:0xffffff, horn:0xffd36e },
+  { id:'sakura',   name:'벚꽃 도깨비', rarity:'R',   body:0xffc2e2, cloth:0xff7ea8, horn:0xffffff },
+  { id:'forest',   name:'숲 도깨비', rarity:'R',     body:0x6fbf87, cloth:0x3c8f5a, horn:0xffe08a },
+  { id:'gold',     name:'황금 도깨비', rarity:'SSR', body:0xffd24a, cloth:0xffb300, horn:0xfff4c2 },
+  { id:'rainbow',  name:'무지개 도깨비', rarity:'SSR', body:0xff9ac4, cloth:0x9ad0ff, horn:0xfff07a, rainbow:true },
+];
+const RARITY_LABEL = { C:'COMMON', R:'RARE', SSR:'SSR' };
+
+/* -------------------- Global game state -------------------- */
+const State = { MENU:'MENU', PLAYING:'PLAYING', GACHA:'GACHA', RESULT:'RESULT' };
+let gameState = State.MENU;
+let currentGameMode = null; // 'infinite' | 'timeattack' | 'ghost'
+
+const TILE = 1;
+const COL_MIN = -5, COL_MAX = 5;     // player movable columns
+const RENDER_HALF = 8;               // lanes render this many cols each side
+const TA_GOAL = 200;                 // Time Attack finish row
+const TA_TIME = 30;                  // Time Attack seconds
+
+let store = {
+  tteok: LS.get('tteok_total', 0),
+  highScore: LS.get('infinite_highscore', 0),
+  owned: LS.get('owned_skins', ['default']),
+  equipped: LS.get('equipped_skin', 'default'),
+};
+function saveStore(){
+  LS.set('tteok_total', store.tteok);
+  LS.set('infinite_highscore', store.highScore);
+  LS.set('owned_skins', store.owned);
+  LS.set('equipped_skin', store.equipped);
+}
+
+/* -------------------- Three.js setup -------------------- */
+let renderer, scene, camera, keyLight;
+const canvas = document.getElementById('game-canvas');
+
+function initThree(){
+  renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xcdeafe);
+  scene.fog = new THREE.Fog(0xcdeafe, 18, 34);
+
+  // Isometric orthographic camera
+  const aspect = window.innerWidth/window.innerHeight;
+  const d = 8.5;
+  camera = new THREE.OrthographicCamera(-d*aspect, d*aspect, d, -d, 0.1, 200);
+  camera.position.set(14, 18, 14);
+  camera.lookAt(0,0,0);
+
+  const amb = new THREE.AmbientLight(0xffffff, 0.72);
+  scene.add(amb);
+  const hemi = new THREE.HemisphereLight(0xfff2f6, 0xbfe6d0, 0.35);
+  scene.add(hemi);
+
+  keyLight = new THREE.DirectionalLight(0xfff4e6, 0.9);
+  keyLight.position.set(10, 20, 8);
+  keyLight.castShadow = true;
+  keyLight.shadow.mapSize.set(1024,1024);
+  const s = 16;
+  keyLight.shadow.camera.left=-s; keyLight.shadow.camera.right=s;
+  keyLight.shadow.camera.top=s;   keyLight.shadow.camera.bottom=-s;
+  keyLight.shadow.camera.near=1;  keyLight.shadow.camera.far=60;
+  keyLight.shadow.bias = -0.0008;
+  scene.add(keyLight);
+  scene.add(keyLight.target);
+}
+
+/* -------------------- Shared geometry / material cache -------------------- */
+const GEO = { box: new THREE.BoxGeometry(1,1,1) };
+const matCache = {};
+function mat(color, opts={}){
+  const key = color + '|' + (opts.transparent?1:0) + '|' + (opts.opacity||1) + '|' + (opts.emissive||0);
+  if(matCache[key]) return matCache[key];
+  const m = new THREE.MeshLambertMaterial({
+    color: color,
+    transparent: !!opts.transparent,
+    opacity: opts.opacity!==undefined?opts.opacity:1,
+    emissive: opts.emissive||0x000000,
+  });
+  matCache[key]=m;
+  return m;
+}
+function box(w,h,d,color,opts){
+  const m = new THREE.Mesh(GEO.box, mat(color,opts));
+  m.scale.set(w,h,d);
+  m.castShadow = opts && opts.noShadow ? false : true;
+  m.receiveShadow = false;
+  return m;
+}
+
+/* -------------------- Voxel model builders -------------------- */
+function buildDokkaebi(skin, ghost=false){
+  const g = new THREE.Group();
+  const op = ghost ? { transparent:true, opacity:0.45, emissive:0x1b3f8a } : {};
+  const bodyColor = ghost ? 0x66aaff : skin.body;
+  const clothColor = ghost ? 0x3f7fff : skin.cloth;
+  const hornColor  = ghost ? 0x99ccff : skin.horn;
+
+  // legs
+  const legL = box(0.22,0.28,0.22, clothColor, op); legL.position.set(-0.16,0.14,0); g.add(legL);
+  const legR = box(0.22,0.28,0.22, clothColor, op); legR.position.set( 0.16,0.14,0); g.add(legR);
+  // body
+  const body = box(0.62,0.5,0.5, bodyColor, op); body.position.y=0.55; g.add(body);
+  // belly cloth
+  const belly = box(0.5,0.24,0.42, clothColor, op); belly.position.y=0.42; g.add(belly);
+  // arms
+  const armL = box(0.16,0.4,0.18, bodyColor, op); armL.position.set(-0.4,0.58,0); g.add(armL);
+  const armR = box(0.16,0.4,0.18, bodyColor, op); armR.position.set( 0.4,0.58,0); g.add(armR);
+  // head
+  const head = box(0.6,0.55,0.55, bodyColor, op); head.position.y=1.08; g.add(head);
+  // eyes
+  const eyeL = box(0.12,0.14,0.06, 0x2a2540, op); eyeL.position.set(-0.14,1.14,0.28); g.add(eyeL);
+  const eyeR = box(0.12,0.14,0.06, 0x2a2540, op); eyeR.position.set( 0.14,1.14,0.28); g.add(eyeR);
+  // cheeks
+  const chk = box(0.5,0.1,0.05, 0xff8f88, op); chk.position.set(0,1.0,0.28); g.add(chk);
+  // horns
+  const hornL = box(0.14,0.3,0.14, hornColor, op); hornL.position.set(-0.2,1.5,0); hornL.rotation.z=0.25; g.add(hornL);
+  const hornR = box(0.14,0.3,0.14, hornColor, op); hornR.position.set( 0.2,1.5,0); hornR.rotation.z=-0.25; g.add(hornR);
+  // club (방망이) in right hand
+  if(!ghost){
+    const club = box(0.14,0.5,0.14, 0xb07a3c, op); club.position.set(0.56,0.72,0); club.rotation.z=-0.3; g.add(club);
+  }
+
+  g.userData.parts = { legL, legR, body, head, hornL, hornR };
+  g.userData.skin = skin;
+  return g;
+}
+
+/* -------------------- Particle system -------------------- */
+const particles = [];
+const MAX_PARTICLES = 260;
+function spawnParticle(x,y,z,color,opts={}){
+  if(particles.length > MAX_PARTICLES) return;
+  const size = opts.size || 0.16;
+  const m = new THREE.Mesh(GEO.box, new THREE.MeshLambertMaterial({
+    color: color, transparent:true, opacity: opts.opacity!==undefined?opts.opacity:0.95,
+    emissive: opts.emissive||0x000000
+  }));
+  m.scale.setScalar(size);
+  m.position.set(x,y,z);
+  m.castShadow = false;
+  scene.add(m);
+  particles.push({
+    mesh:m,
+    vx:opts.vx||0, vy:opts.vy||0, vz:opts.vz||0,
+    gravity: opts.gravity!==undefined?opts.gravity:0,
+    life: opts.life||0.35, maxLife: opts.life||0.35,
+    spin: opts.spin||0, shrink: opts.shrink!==undefined?opts.shrink:true,
+  });
+}
+function updateParticles(dt){
+  for(let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+    p.life -= dt;
+    if(p.life<=0){ scene.remove(p.mesh); p.mesh.material.dispose(); particles.splice(i,1); continue; }
+    p.vy -= p.gravity*dt;
+    p.mesh.position.x += p.vx*dt;
+    p.mesh.position.y += p.vy*dt;
+    p.mesh.position.z += p.vz*dt;
+    p.mesh.rotation.y += p.spin*dt;
+    const k = p.life/p.maxLife;
+    p.mesh.material.opacity = Math.min(1, k*1.1);
+    if(p.shrink) p.mesh.scale.setScalar(Math.max(0.01, (p.mesh.scale.x) * (1 - dt*3.2)));
+  }
+}
+function burstDust(x,z){
+  const n = 4 + Math.floor(Math.random()*3);
+  for(let i=0;i<n;i++){
+    const a = Math.random()*Math.PI*2;
+    spawnParticle(x + (Math.random()-0.5)*0.3, 0.15, z + (Math.random()-0.5)*0.3,
+      Math.random()<0.5?0xffffff:0xd8d0dc,
+      { vx:Math.cos(a)*0.9, vz:Math.sin(a)*0.9, vy:0.6, gravity:1.5, life:0.3, size:0.18 });
+  }
+}
+function burstSparkle(x,z,color,count){
+  const n = count||8;
+  for(let i=0;i<n;i++){
+    const a = Math.random()*Math.PI*2;
+    spawnParticle(x+(Math.random()-0.5)*0.3, 0.6+Math.random()*0.4, z+(Math.random()-0.5)*0.3, color,
+      { vx:Math.cos(a)*1.4, vz:Math.sin(a)*1.4, vy:1.6+Math.random(), gravity:3.2, life:0.5, size:0.14,
+        spin:6, emissive:color });
+  }
+}
+function motionTrail(fromModel, x,y,z){
+  // semi-transparent silhouette that fades super fast
+  const s = new THREE.Mesh(GEO.box, new THREE.MeshLambertMaterial({
+    color:0xffffff, transparent:true, opacity:0.4, emissive:0x88bbff }));
+  s.scale.set(0.6,1.1,0.55);
+  s.position.set(x,y+0.6,z);
+  s.castShadow=false;
+  scene.add(s);
+  particles.push({ mesh:s, vx:0,vy:0,vz:0, gravity:0, life:0.18, maxLife:0.18, spin:0, shrink:false });
+}
+
+/* -------------------- Lane / World management -------------------- */
+let lanes = {};        // row -> lane object
+let feverActive=false;
+const LANE_TYPES = ['grass','dirt','stone','river'];
+
+function laneBaseColor(type, row){
+  if(type==='grass') return (row%2===0)?0xbde6cf:0xa9dfc0;
+  if(type==='dirt')  return (row%2===0)?0xd8c3a5:0xceb798;
+  if(type==='stone') return (row%2===0)?0xd0d0da:0xc4c4d0;
+  if(type==='river') return 0x8fb8f0;
+  return 0xbde6cf;
+}
+
+// deterministic pseudo-random per row for stable maps
+function rowRand(row, salt){
+  let x = Math.sin((row*127.1 + (salt||0)*311.7)) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function makeLane(row){
+  const g = new THREE.Group();
+  g.position.z = -row*TILE;
+  let type;
+  if(currentGameMode==='timeattack'){
+    if(row<=3) type='grass';
+    else if(row>=TA_GOAL) type='gate';
+    else {
+      const r = rowRand(row,1);
+      if(r<0.42) type='grass'; else if(r<0.66) type='dirt';
+      else if(r<0.84) type='stone'; else type='river';
+    }
+  } else {
+    if(row<=3) type='grass';
+    else {
+      const r = Math.random();
+      if(r<0.34) type='grass'; else if(r<0.58) type='dirt';
+      else if(r<0.78) type='stone'; else type='river';
+    }
+  }
+
+  const lane = { row, type, group:g, mobs:[], statics:{}, items:{}, dir:1, speed:0 };
+
+  // ground tiles
+  const baseColor = laneBaseColor(type,row);
+  for(let x=-RENDER_HALF;x<=RENDER_HALF;x++){
+    let c = baseColor;
+    const t = box(1,0.5,1, c);
+    t.receiveShadow = true; t.castShadow=false;
+    t.position.set(x, -0.25, 0);
+    g.add(t);
+    lane._tiles = lane._tiles||[]; lane._tiles.push(t);
+    lane._baseColor = baseColor;
+  }
+  // water surface tint for river
+  if(type==='river'){
+    const w = box(2*RENDER_HALF+1, 0.06, 1, 0x6fa8ea, {transparent:true, opacity:0.6, noShadow:true});
+    w.position.set(0, 0.03, 0); g.add(w);
+  }
+
+  // ------- gate lane (finish) -------
+  if(type==='gate'){
+    const c1 = box(0.8,4,0.8,0xff9aa2); c1.position.set(-2.6,2,0); g.add(c1);
+    const c2 = box(0.8,4,0.8,0xff9aa2); c2.position.set(2.6,2,0); g.add(c2);
+    const top = box(6.5,0.9,1.2,0xffd36e); top.position.set(0,4.2,0); g.add(top);
+    const roof= box(7.3,0.5,1.6,0xe5484d); roof.position.set(0,4.9,0); g.add(roof);
+    lane.isGate = true;
+  }
+
+  // ------- grass: static obstacles + tteok -------
+  if(type==='grass'){
+    const occupied = new Set();
+    if(row>4){
+      const density = currentGameMode==='timeattack' ? 0.18 : 0.22;
+      for(let x=COL_MIN;x<=COL_MAX;x++){
+        const rr = currentGameMode==='timeattack' ? rowRand(row, x*7+3) : Math.random();
+        if(rr<density){
+          // keep row passable: don't block if would fill; simple cap
+          if(occupied.size >= (COL_MAX-COL_MIN-1)) break;
+          occupied.add(x);
+          const kind = ((currentGameMode==='timeattack'? rowRand(row,x*13):Math.random())<0.5)?'tree':'rock';
+          const obs = new THREE.Group();
+          if(kind==='tree'){
+            const trunk=box(0.3,0.7,0.3,0x8a5a2b); trunk.position.y=0.35; obs.add(trunk);
+            const leaf=box(1,1,1,0x5fae74); leaf.position.y=1.1; obs.add(leaf);
+            const leaf2=box(0.7,0.7,0.7,0x74c98c); leaf2.position.y=1.7; obs.add(leaf2);
+          } else {
+            const r1=box(0.9,0.7,0.9,0xa9a9b8); r1.position.y=0.35; obs.add(r1);
+            const r2=box(0.5,0.4,0.5,0xc0c0cc); r2.position.set(0.15,0.75,0.1); obs.add(r2);
+          }
+          obs.position.set(x,0,0); g.add(obs);
+          lane.statics[x] = { kind, group:obs, solid:true };
+        }
+      }
+    }
+    // border trees to frame the road
+    [-RENDER_HALF+1,-RENDER_HALF+2, RENDER_HALF-1, RENDER_HALF-2].forEach(x=>{
+      if(x>COL_MAX || x<COL_MIN){
+        const t=new THREE.Group();
+        const trunk=box(0.3,0.7,0.3,0x8a5a2b); trunk.position.y=0.35; t.add(trunk);
+        const leaf=box(1,1.1,1,0x5fae74); leaf.position.y=1.15; t.add(leaf);
+        t.position.set(x,0,0); g.add(t);
+      }
+    });
+    // tteok pickups (rice cakes) sometimes
+    for(let x=COL_MIN;x<=COL_MAX;x++){
+      if(lane.statics[x]) continue;
+      const rr = Math.random();
+      if(rr<0.10){
+        lane.items[x] = spawnItem(g, x, 'tteok');
+      } else if(currentGameMode==='timeattack' && rr<0.16){
+        lane.items[x] = spawnItem(g, x, 'chili');
+      } else if(currentGameMode!=='timeattack' && rr<0.135){
+        lane.items[x] = spawnItem(g, x, 'chili');
+      } else if(rr<0.145){
+        lane.items[x] = spawnItem(g, x, 'giant');
+      }
+    }
+  }
+
+  // ------- road lanes: moving obstacles -------
+  if(type==='dirt' || type==='stone'){
+    const dir = (rowRand(row,5)<0.5)?1:-1;
+    const baseSpeed = 1.6 + rowRand(row,9)*2.0;
+    lane.dir = dir; lane.speed = baseSpeed;
+    const count = 2 + Math.floor(rowRand(row,11)*2); // 2-3 vehicles
+    const gap = (2*RENDER_HALF+2)/count;
+    for(let i=0;i<count;i++){
+      const mob = (type==='dirt') ? buildPalanquin() : buildGuard();
+      mob.position.set(-RENDER_HALF-1 + i*gap + rowRand(row,i*3)*1.5, 0, 0);
+      if(dir<0) mob.rotation.y = Math.PI;
+      g.add(mob);
+      lane.mobs.push({ model:mob, type:(type==='dirt'?'palanquin':'guard'), w:(type==='dirt'?1.5:0.9), dead:false });
+    }
+    // tteok on road occasionally
+    for(let x=COL_MIN;x<=COL_MAX;x++){
+      if(Math.random()<0.08){ lane.items[x]=spawnItem(g,x,'tteok'); }
+    }
+  }
+
+  // ------- river: turtles (rideable) -------
+  if(type==='river'){
+    const dir = (rowRand(row,7)<0.5)?1:-1;
+    const spd = 1.2 + rowRand(row,3)*1.4;
+    lane.dir=dir; lane.speed=spd;
+    const count = 2 + Math.floor(rowRand(row,4)*2);
+    const gap = (2*RENDER_HALF+2)/count;
+    for(let i=0;i<count;i++){
+      const turtle = buildTurtle();
+      turtle.position.set(-RENDER_HALF-1 + i*gap + rowRand(row,i*5)*1.5, 0.02, 0);
+      g.add(turtle);
+      lane.mobs.push({ model:turtle, type:'turtle', w:1.2, dead:false });
+    }
+  }
+
+  scene.add(g);
+  return lane;
+}
+
+function spawnItem(parent, x, kind){
+  const grp = new THREE.Group();
+  if(kind==='tteok'){
+    const b=box(0.42,0.42,0.42,0xfff2f6,{emissive:0x553344}); b.position.y=0.62; grp.add(b);
+    const stripe=box(0.44,0.1,0.44,0xff9aa2); stripe.position.y=0.62; grp.add(stripe);
+  } else if(kind==='chili'){
+    const b=box(0.22,0.55,0.22,0xe5484d,{emissive:0x551111}); b.position.y=0.6; b.rotation.z=0.3; grp.add(b);
+    const stem=box(0.12,0.16,0.12,0x5fae74); stem.position.set(-0.08,0.86,0); grp.add(stem);
+  } else if(kind==='giant'){
+    const b=box(0.5,0.5,0.15,0xffd36e,{emissive:0x554400}); b.position.y=0.65; grp.add(b);
+    const t=box(0.3,0.3,0.2,0xe5484d); t.position.set(0,0.65,0.02); t.rotation.z=Math.PI/4; grp.add(t);
+  }
+  grp.position.set(x,0,0);
+  grp.userData.kind = kind;
+  parent.add(grp);
+  return { kind, group:grp, taken:false, baseY:0 };
+}
+
+function buildPalanquin(){
+  const g=new THREE.Group();
+  const body=box(1.3,0.9,0.9,0x8a3d3d); body.position.y=0.85; g.add(body);
+  const roof=box(1.5,0.35,1.05,0xffd36e); roof.position.y=1.4; g.add(roof);
+  const knob=box(0.2,0.25,0.2,0xe5484d); knob.position.y=1.65; g.add(knob);
+  const pole1=box(2.1,0.12,0.12,0x8a5a2b); pole1.position.set(0,0.7,0.32); g.add(pole1);
+  const pole2=box(2.1,0.12,0.12,0x8a5a2b); pole2.position.set(0,0.7,-0.32); g.add(pole2);
+  const win=box(0.5,0.4,0.92,0x2a2540,{}); win.position.set(0,0.9,0); g.add(win);
+  return g;
+}
+function buildGuard(){
+  const g=new THREE.Group();
+  const legs=box(0.4,0.4,0.4,0x33344a); legs.position.y=0.2; g.add(legs);
+  const body=box(0.55,0.6,0.5,0xe5484d); body.position.y=0.7; g.add(body);
+  const head=box(0.4,0.4,0.4,0xffd8b0); head.position.y=1.15; g.add(head);
+  const hat=box(0.55,0.2,0.55,0x2a2540); hat.position.y=1.42; g.add(hat);
+  const feather=box(0.1,0.4,0.1,0xff9aa2); feather.position.set(0,1.65,0); g.add(feather);
+  const spear=box(0.1,1.6,0.1,0xb07a3c); spear.position.set(0.35,0.9,0); g.add(spear);
+  const tip=box(0.18,0.25,0.18,0xd0d0da); tip.position.set(0.35,1.75,0); g.add(tip);
+  return g;
+}
+function buildTurtle(){
+  const g=new THREE.Group();
+  const shell=box(1.2,0.4,0.9,0x5f8f5a); shell.position.y=0.25; g.add(shell);
+  const shellTop=box(0.8,0.25,0.6,0x7ab074); shellTop.position.y=0.5; g.add(shellTop);
+  const head=box(0.3,0.3,0.35,0x9ec98c); head.position.set(0.7,0.25,0); g.add(head);
+  const eye=box(0.08,0.08,0.06,0x222); eye.position.set(0.86,0.32,0.12); g.add(eye);
+  const l1=box(0.25,0.2,0.25,0x5f8f5a); l1.position.set(0.4,0.1,0.4); g.add(l1);
+  const l2=box(0.25,0.2,0.25,0x5f8f5a); l2.position.set(-0.4,0.1,0.4); g.add(l2);
+  return g;
+}
+
+/* -------------------- Player -------------------- */
+let player = null;         // THREE.Group model
+let ghostModel = null;
+const P = {
+  gridX:0, row:0,
+  worldX:0, worldZ:0,      // rendered position
+  jumping:false, jT:0, jDur:0.14,
+  fromX:0, fromZ:0, toX:0, toZ:0,
+  ridingTurtle:null,
+  alive:true,
+};
+
+function currentSkin(){ return SKINS.find(s=>s.id===store.equipped) || SKINS[0]; }
+
+function resetPlayer(){
+  if(player){ scene.remove(player); }
+  player = buildDokkaebi(currentSkin(), false);
+  scene.add(player);
+  P.gridX=0; P.row=0; P.worldX=0; P.worldZ=0;
+  P.jumping=false; P.jT=0; P.jDur=0.14; P.ridingTurtle=null; P.alive=true;
+  player.position.set(0,0,0);
+  player.rotation.y = Math.PI; // face forward (-z)
+}
+
+/* -------------------- Game run variables -------------------- */
+let clock;
+const run = {
+  score:0, maxRow:0,
+  fever:0, feverTimer:0,
+  giantTimer:0, chiliTimer:0,
+  stealthTimer:0, stealthCd:0,
+  idleTimer:0,
+  autoScrollRow:0,          // camera forced advance
+  camRow:0,
+  elapsed:0,
+  taTimeLeft:TA_TIME,
+  finished:false,
+  path:[],                  // ghost recording {t,x,row}
+  ghostPath:null, ghostIndex:0, ghostRow:0, ghostFinalRow:0, ghostDone:false,
+  eagle:null,
+};
+
+const SKILL_CD = 15;
+const STEALTH_DUR = 2;
+const FEVER_DUR = 5;
+const GIANT_DUR = 4;
+const CHILI_DUR = 3;
+
+/* -------------------- Movement -------------------- */
+function laneAt(row){ return lanes[row]; }
+
+function canEnter(row, x){
+  if(x<COL_MIN || x>COL_MAX) return false;
+  const lane = lanes[row];
+  if(!lane) return true;
+  // stealth / giant pass through solids
+  if(run.stealthTimer>0) return true;
+  const st = lane.statics[x];
+  if(st && st.solid){
+    if(run.giantTimer>0){ // smash the obstacle
+      smashStatic(lane, x);
+      return true;
+    }
+    return false;
+  }
+  return true;
+}
+
+function smashStatic(lane, x){
+  const st = lane.statics[x];
+  if(!st) return;
+  const wz = -lane.row*TILE;
+  burstSparkle(x, wz, 0xbfa27a, 10);
+  lane.group.remove(st.group);
+  delete lane.statics[x];
+  sfx.smash();
+}
+
+function tryMove(dx, drow){
+  if(!P.alive || gameState!==State.PLAYING) return;
+  if(P.jumping) return;
+  const targetRow = P.row + drow;
+  let baseX = P.ridingTurtle ? Math.round(P.worldX) : P.gridX;
+  const targetX = baseX + dx;
+  if(!canEnter(targetRow, targetX)) return;
+
+  // begin jump
+  P.ridingTurtle = null;
+  P.fromX = P.worldX; P.fromZ = P.worldZ;
+  P.toX = targetX; P.toZ = -targetRow*TILE;
+  P.gridX = targetX; P.row = targetRow;
+  P.jumping = true; P.jT = 0;
+  P.jDur = 0.14 / (run.chiliTimer>0 ? 1.5 : 1); // chili speeds jump anim +50%
+
+  burstDust(P.fromX, P.fromZ);
+  if(dx!==0){ motionTrail(player, P.fromX, 0, P.fromZ); motionTrail(player, (P.fromX+P.toX)/2,0,P.fromZ); }
+  sfx.jump();
+  run.idleTimer = 0;
+
+  // face direction
+  if(dx>0) player.rotation.y = -Math.PI/2;
+  else if(dx<0) player.rotation.y = Math.PI/2;
+  else if(drow>0) player.rotation.y = Math.PI;
+  else if(drow<0) player.rotation.y = 0;
+}
+
+function finishJump(){
+  P.jumping=false;
+  P.worldX = P.toX; P.worldZ = P.toZ;
+  if(P.row > run.maxRow){ run.maxRow = P.row; }
+  recordPath();
+  resolveLanding();
+}
+
+function resolveLanding(){
+  const lane = lanes[P.row];
+  if(!lane){ return; }
+  // pickups
+  const it = lane.items[P.gridX];
+  if(it && !it.taken){ collectItem(lane, it, P.gridX); }
+
+  // river landing: must be on a turtle
+  if(lane.type==='river'){
+    let onTurtle=null;
+    for(const m of lane.mobs){
+      if(Math.abs(m.model.position.x - P.worldX) < (m.w/2 + 0.35)){ onTurtle=m; break; }
+    }
+    if(onTurtle){ P.ridingTurtle = onTurtle; }
+    else if(run.stealthTimer<=0 && !feverActive){ die('drown'); }
+  }
+  // road landing: immediate collision check
+  if(lane.type==='dirt' || lane.type==='stone'){
+    checkVehicleCollision(lane);
+  }
+  // gate reach in timeattack
+  if(currentGameMode==='timeattack' && P.row>=TA_GOAL && !run.finished){
+    timeAttackWin();
+  }
+}
+
+function collectItem(lane, it, x){
+  it.taken=true;
+  lane.group.remove(it.group);
+  delete lane.items[x];
+  const wz = -lane.row*TILE;
+  if(it.kind==='tteok'){
+    store.tteok++; addFever(10);
+    burstSparkle(x, wz, 0xffd36e, 8);
+    sfx.pickup();
+  } else if(it.kind==='chili'){
+    run.chiliTimer = CHILI_DUR;
+    burstSparkle(x, wz, 0xe5484d, 10);
+    sfx.chili();
+    showToast('매운 고추! 점프 가속!');
+  } else if(it.kind==='giant'){
+    run.giantTimer = GIANT_DUR;
+    burstSparkle(x, wz, 0xffd36e, 14);
+    sfx.giant();
+    showToast('거대화! 장애물 격파!');
+  }
+  updateHUD();
+}
+
+function addFever(amount){
+  if(feverActive) return;
+  run.fever = Math.min(100, run.fever + amount);
+  if(run.fever>=100){ startFever(); }
+}
+function startFever(){
+  feverActive=true; run.feverTimer=FEVER_DUR; run.fever=100;
+  document.getElementById('fever-wrap').classList.add('on');
+  sfx.fever();
+  showToast('피버 모드! 무적!');
+}
+function endFever(){
+  feverActive=false; run.fever=0; run.feverTimer=0;
+  document.getElementById('fever-wrap').classList.remove('on');
+}
+
+/* -------------------- Skill: stealth (은신) -------------------- */
+function useSkill(){
+  if(gameState!==State.PLAYING || !P.alive) return;
+  if(run.stealthCd>0) return;
+  run.stealthTimer = STEALTH_DUR;
+  run.stealthCd = SKILL_CD;
+  sfx.skill();
+  showToast('은신!');
+}
+
+/* -------------------- Collision checks each frame -------------------- */
+function checkVehicleCollision(lane){
+  if(!P.alive) return;
+  if(run.stealthTimer>0 || feverActive) return;
+  for(const m of lane.mobs){
+    if(m.dead) continue;
+    if(Math.abs(m.model.position.x - P.worldX) < (m.w/2 + 0.35)){
+      if(run.giantTimer>0){
+        // smash vehicle
+        m.dead=true; lane.group.remove(m.model);
+        burstSparkle(m.model.position.x, -lane.row*TILE, 0xff9aa2, 14);
+        sfx.smash();
+      } else {
+        die('crash');
+      }
+      return;
+    }
+  }
+}
+
+/* -------------------- Death & endings -------------------- */
+function die(reason){
+  if(!P.alive || run.finished) return;
+  P.alive=false;
+  sfx.crash();
+  if(reason==='eagle') spawnEagle();
+  setTimeout(()=> endRun(false, reason), reason==='eagle'?700:450);
+}
+
+function spawnEagle(){
+  const g=new THREE.Group();
+  const body=box(1,0.6,1.4,0x6b4a2b); body.position.y=0; g.add(body);
+  const wingL=box(1.6,0.15,1,0x8a5a2b); wingL.position.set(-1.2,0,0); g.add(wingL);
+  const wingR=box(1.6,0.15,1,0x8a5a2b); wingR.position.set(1.2,0,0); g.add(wingR);
+  const head=box(0.5,0.5,0.5,0xf0f0f0); head.position.set(0,0.2,0.8); g.add(head);
+  const beak=box(0.2,0.2,0.3,0xffd36e); beak.position.set(0,0.1,1.15); g.add(beak);
+  g.position.set(P.worldX, 8, P.worldZ);
+  scene.add(g);
+  run.eagle = { model:g, t:0 };
+}
+
+/* -------------------- Ghost recording / playback -------------------- */
+function recordPath(){
+  if(currentGameMode==='infinite' || currentGameMode==='ghost'){
+    run.path.push({ t: +run.elapsed.toFixed(3), x:P.gridX, row:P.row });
+  }
+}
+function saveGhostIfRecord(){
+  if(currentGameMode!=='infinite') return;
+  if(run.score > store.highScore){
+    store.highScore = run.score;
+    LS.set('infinite_highscore', store.highScore);
+    LS.set('ghost_replay_path', run.path);
+    return true;
+  }
+  return false;
+}
+function loadGhost(){
+  const path = LS.get('ghost_replay_path', null);
+  if(!path || path.length<2){ run.ghostPath=null; return; }
+  run.ghostPath = path;
+  run.ghostFinalRow = path[path.length-1].row;
+  run.ghostIndex = 0;
+  ghostModel = buildDokkaebi(currentSkin(), true);
+  ghostModel.rotation.y = Math.PI;
+  scene.add(ghostModel);
+  ghostModel.position.set(0,0,0);
+}
+function updateGhost(dt){
+  if(!run.ghostPath || !ghostModel) return;
+  const path = run.ghostPath;
+  const t = run.elapsed;
+  if(t >= path[path.length-1].t){
+    const last = path[path.length-1];
+    ghostModel.position.set(last.x, 0.1, -last.row*TILE);
+    run.ghostRow = last.row;
+    run.ghostDone = true;
+    return;
+  }
+  // find segment
+  let i = run.ghostIndex;
+  while(i < path.length-1 && path[i+1].t <= t) i++;
+  run.ghostIndex = i;
+  const a = path[i], b = path[i+1];
+  const span = Math.max(0.0001, b.t - a.t);
+  const k = Math.min(1, (t - a.t)/span);
+  const gx = a.x + (b.x - a.x)*k;
+  const grow = a.row + (b.row - a.row)*k;
+  const hop = Math.sin(Math.min(1,k)*Math.PI) * 0.5;
+  ghostModel.position.set(gx, 0.1 + hop, -grow*TILE);
+  run.ghostRow = grow;
+}
+
+/* -------------------- Update world (mobs, cleanup, camera) -------------------- */
+function ensureLanes(){
+  const from = Math.floor(run.camRow) - 8;
+  let to = Math.floor(P.row) + 22;
+  if(currentGameMode==='timeattack') to = Math.min(to, TA_GOAL);
+  for(let r=from; r<=to; r++){
+    if(r<0) continue;
+    if(!lanes[r]) lanes[r]=makeLane(r);
+  }
+  // cleanup behind
+  for(const k in lanes){
+    const r = +k;
+    if(r < from-2){
+      scene.remove(lanes[r].group);
+      disposeLane(lanes[r]);
+      delete lanes[r];
+    }
+  }
+}
+function disposeLane(lane){
+  lane.group.traverse(o=>{ if(o.isMesh && o.material && o.material.dispose && o.material._noCache){ o.material.dispose(); } });
+}
+
+function updateMobs(dt){
+  const slow = feverActive ? 0.5 : 1;
+  for(const k in lanes){
+    const lane = lanes[k];
+    if(!lane.mobs.length) continue;
+    const spd = lane.speed * lane.dir * slow;
+    for(const m of lane.mobs){
+      if(m.dead) continue;
+      m.model.position.x += spd*dt;
+      if(m.model.position.x > RENDER_HALF+1.5){ m.model.position.x = -RENDER_HALF-1.5; }
+      else if(m.model.position.x < -RENDER_HALF-1.5){ m.model.position.x = RENDER_HALF+1.5; }
+    }
+    // continuous collision for the lane the player is on
+    if(!P.jumping && P.alive && lane.row===P.row){
+      if(lane.type==='dirt'||lane.type==='stone'){ checkVehicleCollision(lane); }
+    }
+  }
+}
+
+function updateRiding(dt){
+  if(!P.ridingTurtle){ return; }
+  const m = P.ridingTurtle;
+  if(m.dead){ P.ridingTurtle=null; return; }
+  const spd = m.model.position ? (lanes[P.row]? lanes[P.row].speed*lanes[P.row].dir*(feverActive?0.5:1):0) : 0;
+  P.worldX = m.model.position.x;
+  P.gridX = Math.round(P.worldX);
+  if(P.worldX > RENDER_HALF+0.5 || P.worldX < -RENDER_HALF-0.5){
+    if(run.stealthTimer<=0 && !feverActive) die('drown');
+  }
+}
+
+/* -------------------- Item bobbing + fever lane glow -------------------- */
+function updateDecor(dt){
+  for(const k in lanes){
+    const lane = lanes[k];
+    for(const x in lane.items){
+      const it = lane.items[x];
+      if(it && it.group){
+        it.group.rotation.y += dt*2;
+        it.group.position.y = Math.sin(run.elapsed*3 + (+x))*0.08;
+      }
+    }
+    // fever neon tint
+    if(lane._tiles){
+      if(feverActive){
+        const hue = (run.elapsed*0.3 + lane.row*0.05)%1;
+        const c = new THREE.Color().setHSL(hue,0.6,0.75);
+        for(const t of lane._tiles){ t.material = t.material; t.material.color.copy(c); }
+      } else if(lane._feverTinted){
+        for(const t of lane._tiles){ t.material.color.setHex(lane._baseColor); }
+      }
+      lane._feverTinted = feverActive;
+    }
+  }
+}
+
+/* -------------------- Player animation + fever halo -------------------- */
+function updatePlayerAnim(dt){
+  if(P.jumping){
+    P.jT += dt;
+    let k = Math.min(1, P.jT/P.jDur);
+    P.worldX = P.fromX + (P.toX-P.fromX)*k;
+    P.worldZ = P.fromZ + (P.toZ-P.fromZ)*k;
+    const hop = Math.sin(k*Math.PI)*0.55;
+    player.position.set(P.worldX, hop, P.worldZ);
+    // squash/stretch
+    const sc = 1 + Math.sin(k*Math.PI)*0.15;
+    player.scale.set(1/Math.sqrt(sc), sc, 1/Math.sqrt(sc));
+    if(k>=1) finishJump();
+  } else {
+    player.position.set(P.worldX, 0, P.worldZ);
+    const idle = 1 + Math.sin(run.elapsed*4)*0.02;
+    player.scale.set(1,idle,1);
+  }
+  // giant scale
+  let baseScale = run.giantTimer>0 ? 2.5 : 1;
+  player.scale.multiplyScalar(baseScale);
+  // stealth transparency
+  const targetOp = run.stealthTimer>0 ? 0.35 : 1;
+  player.traverse(o=>{ if(o.isMesh){ o.material.transparent = targetOp<1; o.material.opacity = targetOp; } });
+  // fever halo
+  if(feverActive && Math.random()<0.6){
+    const a=Math.random()*Math.PI*2;
+    spawnParticle(P.worldX+Math.cos(a)*0.4, 0.8+Math.random()*0.6, P.worldZ+Math.sin(a)*0.4,
+      new THREE.Color().setHSL(Math.random(),0.7,0.7).getHex(),
+      { vy:1.2, gravity:1, life:0.5, size:0.13, emissive:0xffddaa });
+  }
+}
+
+/* -------------------- Camera follow -------------------- */
+function updateCamera(dt){
+  // forced auto-scroll for infinite & ghost
+  if(currentGameMode==='infinite' || currentGameMode==='ghost'){
+    const scrollSpeed = 0.9 + Math.min(2.0, run.maxRow*0.004);
+    run.autoScrollRow += scrollSpeed*dt;
+  }
+  let target = Math.max(P.row, run.autoScrollRow);
+  if(currentGameMode==='timeattack') target = P.row;
+  run.camRow += (target - run.camRow) * Math.min(1, dt*4);
+
+  const cz = -run.camRow*TILE;
+  camera.position.set(P.worldX*0.35 + 12, 17, cz + 12);
+  camera.lookAt(P.worldX*0.35, 0, cz);
+  // shadow follow
+  keyLight.position.set(P.worldX+10, 20, cz+8);
+  keyLight.target.position.set(P.worldX, 0, cz);
+}
+
+/* -------------------- Lose conditions (behind camera / idle / ghost) -------------------- */
+function checkLoseConditions(dt){
+  if(!P.alive || run.finished) return;
+
+  // idle timer (infinite / ghost): no forward progress
+  if(currentGameMode==='infinite' || currentGameMode==='ghost'){
+    run.idleTimer += dt;
+    if(run.idleTimer > 5){ die('eagle'); return; }
+    // fell behind camera
+    if(P.row < run.autoScrollRow - 6){ die('eagle'); return; }
+  }
+
+  // ghost race conditions
+  if(currentGameMode==='ghost' && run.ghostPath){
+    // player passed ghost's final resting row -> new record
+    if(P.row > run.ghostFinalRow){ ghostRaceWin(); return; }
+    // ghost too far ahead
+    if(run.ghostRow - P.row > 8){ die('ghost_far'); return; }
+  }
+}
+
+/* -------------------- Mode win handlers -------------------- */
+function timeAttackWin(){
+  run.finished=true;
+  const left = run.taTimeLeft;
+  let grade='C';
+  if(left>=15) grade='SSS'; else if(left>=10) grade='SS';
+  else if(left>=5) grade='A'; else if(left>=2) grade='B'; else grade='C';
+  sfx.win();
+  setTimeout(()=> endRun(true, 'ta_clear', {grade, left}), 400);
+}
+function ghostRaceWin(){
+  run.finished=true;
+  sfx.win();
+  setTimeout(()=> endRun(true, 'ghost_win'), 400);
+}
+
+/* -------------------- Timers -------------------- */
+function updateTimers(dt){
+  if(run.stealthCd>0) run.stealthCd=Math.max(0,run.stealthCd-dt);
+  if(run.stealthTimer>0) run.stealthTimer=Math.max(0,run.stealthTimer-dt);
+  if(run.chiliTimer>0) run.chiliTimer=Math.max(0,run.chiliTimer-dt);
+  if(run.giantTimer>0) run.giantTimer=Math.max(0,run.giantTimer-dt);
+  if(feverActive){ run.feverTimer-=dt; if(run.feverTimer<=0) endFever(); }
+
+  if(currentGameMode==='timeattack' && !run.finished){
+    run.taTimeLeft -= dt;
+    if(run.taTimeLeft<=0){ run.taTimeLeft=0; die('timeout'); }
+  }
+}
+
+/* -------------------- Eagle animation -------------------- */
+function updateEagle(dt){
+  if(!run.eagle) return;
+  run.eagle.t += dt;
+  const e = run.eagle;
+  e.model.position.y += (0.6 - e.model.position.y)*Math.min(1,dt*4);
+  e.model.position.x += (P.worldX - e.model.position.x)*Math.min(1,dt*4);
+  e.model.position.z += (P.worldZ - e.model.position.z)*Math.min(1,dt*4);
+  const wg = Math.sin(e.t*20)*0.5;
+  e.model.children[1].rotation.z = wg;
+  e.model.children[2].rotation.z = -wg;
+  if(e.t>0.35 && player){ player.position.y = e.model.position.y - 0.5; player.visible = e.t<1.2? true : false; }
+}
+
+/* -------------------- Main loop -------------------- */
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.05, clock.getDelta());
+
+  if(gameState===State.PLAYING){
+    run.elapsed += dt;
+    ensureLanes();
+    updateTimers(dt);
+    updateMobs(dt);
+    if(!P.jumping) updateRiding(dt);
+    updatePlayerAnim(dt);
+    if(currentGameMode==='ghost') updateGhost(dt);
+    updateDecor(dt);
+    checkLoseConditions(dt);
+    updateCamera(dt);
+    updateEagle(dt);
+    // score = max row
+    run.score = run.maxRow;
+    updateHUD();
+  }
+  updateParticles(dt);
+  renderer.render(scene, camera);
+}
+
+/* -------------------- HUD update -------------------- */
+const el = id=>document.getElementById(id);
+function updateHUD(){
+  el('hud-score').textContent = run.score;
+  el('hud-tteok').textContent = store.tteok;
+  const ff = el('fever-fill'); ff.style.width = (feverActive?100:run.fever) + '%';
+  // skill cooldown
+  const sb = el('skill-btn'), cd = el('skill-cd');
+  if(run.stealthCd>0){ sb.classList.add('cool'); cd.textContent = Math.ceil(run.stealthCd)+'초'; }
+  else { sb.classList.remove('cool'); cd.textContent = '준비'; }
+  // timeattack
+  if(currentGameMode==='timeattack'){
+    const tb=el('timer-box'); tb.classList.remove('hidden');
+    el('hud-time').textContent = Math.ceil(run.taTimeLeft);
+    if(run.taTimeLeft<=10) tb.classList.add('warn'); else tb.classList.remove('warn');
+  }
+  // ghost
+  if(currentGameMode==='ghost' && run.ghostPath){
+    el('ghost-box').classList.remove('hidden');
+    const diff = Math.round(run.ghostRow - P.row);
+    el('hud-ghost').textContent = diff;
+  }
+}
+
+/* -------------------- Toast -------------------- */
+let toastTimer=null;
+function showToast(msg){
+  const t=el('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=> t.classList.remove('show'), 1100);
+}
+
+/* -------------------- Start / End run -------------------- */
+function clearWorld(){
+  for(const k in lanes){ scene.remove(lanes[k].group); }
+  lanes = {};
+  for(const p of particles){ scene.remove(p.mesh); if(p.mesh.material._noCache) p.mesh.material.dispose(); }
+  particles.length=0;
+  if(ghostModel){ scene.remove(ghostModel); ghostModel=null; }
+  if(run.eagle){ scene.remove(run.eagle.model); }
+}
+
+function startRun(mode){
+  currentGameMode = mode;
+  sfx.init();
+  clearWorld();
+  // reset run
+  Object.assign(run, {
+    score:0, maxRow:0, fever:0, feverTimer:0, giantTimer:0, chiliTimer:0,
+    stealthTimer:0, stealthCd:0, idleTimer:0, autoScrollRow:0, camRow:0,
+    elapsed:0, taTimeLeft:TA_TIME, finished:false, path:[],
+    ghostPath:null, ghostIndex:0, ghostRow:0, ghostFinalRow:0, ghostDone:false, eagle:null,
+  });
+  feverActive=false;
+  document.getElementById('fever-wrap').classList.remove('on');
+  resetPlayer();
+  ensureLanes();
+  if(mode==='ghost'){ loadGhost(); }
+  // HUD toggles
+  el('timer-box').classList.toggle('hidden', mode!=='timeattack');
+  el('ghost-box').classList.add('hidden');
+  if(mode==='ghost' && !run.ghostPath){
+    showToast('저장된 고스트가 없어 자유 주행합니다');
+  }
+  recordPath();
+  gameState = State.PLAYING;
+  showScreen('hud');
+  updateHUD();
+}
+
+function endRun(win, reason, extra){
+  if(gameState===State.RESULT) return;
+  gameState = State.RESULT;
+  saveStore();
+
+  const head = el('res-headline');
+  const rankBox = el('res-rank');
+  const stats = el('res-stats');
+  rankBox.classList.add('hidden');
+  head.classList.remove('win','lose');
+
+  let statLines = `점수(최고 칸): <b>${run.score}</b><br/>획득한 떡: <b>${store.tteok}</b>개`;
+
+  if(win && reason==='ta_clear'){
+    head.textContent='미션 성공!'; head.classList.add('win');
+    rankBox.classList.remove('hidden');
+    rankBox.innerHTML = `최종 등급: <span class="grade">${extra.grade}</span>`;
+    statLines = `남은 시간: <b>${extra.left.toFixed(1)}</b>초<br/>` + statLines;
+    sfx.win();
+  } else if(win && reason==='ghost_win'){
+    head.textContent='신기록 달성!'; head.classList.add('win');
+    stats.innerHTML='';
+    rankBox.classList.remove('hidden');
+    rankBox.innerHTML = `<span style="font-size:20px;color:var(--mint-d)">고스트를 이겼습니다!</span>`;
+    sfx.win();
+  } else {
+    // loss variants
+    head.classList.add('lose');
+    if(currentGameMode==='timeattack') head.textContent='미션 실패';
+    else head.textContent='게임 오버';
+    // infinite high score save
+    const newRec = saveGhostIfRecord();
+    if(newRec) statLines += `<br/><span style="color:var(--mint-d)">🎉 새로운 최고 기록! 고스트 저장됨</span>`;
+    else if(currentGameMode==='infinite') statLines += `<br/>최고 기록: <b>${store.highScore}</b>칸`;
+    sfx.lose();
+  }
+
+  stats.innerHTML = statLines;
+  saveStore();
+  setTimeout(()=> showScreen('result'), 60);
+}
+
+/* -------------------- Screens -------------------- */
+function showScreen(which){
+  ['menu','hud','gacha','result'].forEach(id=>{
+    el(id).classList.toggle('hidden', id!==which);
+  });
+  if(which==='menu'){
+    el('menu-tteok').textContent = store.tteok;
+  }
+}
+
+/* -------------------- Gacha UI -------------------- */
+function openGacha(){
+  gameState=State.GACHA;
+  el('gacha-tteok').textContent = store.tteok;
+  el('gacha-result').textContent='';
+  renderSkinGrid();
+  showScreen('gacha');
+}
+function renderSkinGrid(){
+  const grid = el('skin-grid'); grid.innerHTML='';
+  for(const s of SKINS){
+    const owned = store.owned.includes(s.id);
+    const equipped = store.equipped===s.id;
+    const card = document.createElement('div');
+    card.className = 'skin-card' + (owned?'':' locked') + (equipped?' equipped':'');
+    const hex = '#'+s.body.toString(16).padStart(6,'0');
+    card.innerHTML = `
+      <div class="sw" style="background:${hex}"></div>
+      <div class="nm">${owned? s.name : '???'}</div>
+      <div class="rr ${s.rarity}">${RARITY_LABEL[s.rarity]}</div>
+      ${ owned
+        ? (equipped
+            ? '<div class="st">장착함</div>'
+            : `<button class="pbtn mint eqbtn" data-equip="${s.id}">장착하기</button>`)
+        : '<div class="st">보유 중 아님</div>' }
+    `;
+    grid.appendChild(card);
+  }
+  grid.querySelectorAll('[data-equip]').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      store.equipped = b.getAttribute('data-equip');
+      saveStore(); renderSkinGrid();
+      sfx.pickup();
+    });
+  });
+}
+function rollGacha(){
+  sfx.init();
+  if(store.tteok < 100){ el('gacha-result').innerHTML='<span style="color:var(--peach-d)">떡이 부족합니다!</span>'; return; }
+  store.tteok -= 100;
+  const r = Math.random();
+  let rarity = (r<0.70)?'C' : (r<0.95)?'R' : 'SSR';
+  const pool = SKINS.filter(s=>s.rarity===rarity);
+  const pick = pool[Math.floor(Math.random()*pool.length)];
+  let msg;
+  if(store.owned.includes(pick.id)){
+    store.tteok += 30;
+    msg = `<span class="rr ${rarity}">[${RARITY_LABEL[rarity]}]</span> ${pick.name} (중복! 떡 30개 반환)`;
+  } else {
+    store.owned.push(pick.id);
+    msg = `<span class="rr ${rarity}">[${RARITY_LABEL[rarity]}]</span> ${pick.name} 획득!`;
+    if(rarity==='SSR') sfx.win(); else sfx.pickup();
+  }
+  saveStore();
+  el('gacha-tteok').textContent = store.tteok;
+  el('gacha-result').innerHTML = msg;
+  renderSkinGrid();
+}
+
+/* -------------------- Input handling -------------------- */
+function bindInput(){
+  // Menu buttons
+  document.querySelectorAll('.menu-btns [data-mode]').forEach(b=>{
+    b.addEventListener('click', ()=>{ sfx.init(); startRun(b.getAttribute('data-mode')); });
+  });
+  el('open-gacha').addEventListener('click', openGacha);
+  el('gacha-roll').addEventListener('click', rollGacha);
+  el('gacha-close').addEventListener('click', ()=>{ gameState=State.MENU; showScreen('menu'); });
+
+  el('res-retry').addEventListener('click', ()=> startRun(currentGameMode));
+  el('res-menu').addEventListener('click', ()=>{ gameState=State.MENU; clearWorld(); showScreen('menu'); });
+
+  // Keyboard
+  window.addEventListener('keydown', e=>{
+    if(gameState!==State.PLAYING) return;
+    switch(e.key){
+      case 'ArrowUp': case 'w': case 'W': tryMove(0, 1); e.preventDefault(); break;
+      case 'ArrowDown': case 's': case 'S': tryMove(0,-1); e.preventDefault(); break;
+      case 'ArrowLeft': case 'a': case 'A': tryMove(-1,0); e.preventDefault(); break;
+      case 'ArrowRight': case 'd': case 'D': tryMove(1,0); e.preventDefault(); break;
+      case 'Shift': useSkill(); e.preventDefault(); break;
+    }
+  });
+
+  // D-pad
+  const dz = (id,dx,dr)=>{
+    const b=el(id);
+    const h=ev=>{ ev.preventDefault(); tryMove(dx,dr); };
+    b.addEventListener('touchstart',h,{passive:false});
+    b.addEventListener('mousedown',h);
+  };
+  dz('d-up',0,1); dz('d-down',0,-1); dz('d-left',-1,0); dz('d-right',1,0);
+  const skb=el('skill-btn');
+  const sh=ev=>{ ev.preventDefault(); useSkill(); };
+  skb.addEventListener('touchstart',sh,{passive:false});
+  skb.addEventListener('mousedown',sh);
+
+  // Swipe / tap on canvas
+  let sx=0, sy=0, moved=false, touchOn=false;
+  const startT=(x,y)=>{ sx=x; sy=y; moved=false; touchOn=true; };
+  const endT=(x,y)=>{
+    if(!touchOn) return; touchOn=false;
+    if(gameState!==State.PLAYING) return;
+    const dx=x-sx, dy=y-sy; const ax=Math.abs(dx), ay=Math.abs(dy);
+    if(ax<24 && ay<24){ tryMove(0,1); return; } // tap = forward
+    if(ax>ay){ tryMove(dx>0?1:-1, 0); }
+    else { tryMove(0, dy<0?1:-1); }
+  };
+  canvas.addEventListener('touchstart', e=>{ const t=e.changedTouches[0]; startT(t.clientX,t.clientY); }, {passive:true});
+  canvas.addEventListener('touchend', e=>{ const t=e.changedTouches[0]; endT(t.clientX,t.clientY); }, {passive:true});
+  canvas.addEventListener('mousedown', e=> startT(e.clientX,e.clientY));
+  canvas.addEventListener('mouseup', e=> endT(e.clientX,e.clientY));
+}
+
+/* -------------------- Resize -------------------- */
+window.addEventListener('resize', ()=>{
+  if(!renderer) return;
+  const aspect = window.innerWidth/window.innerHeight;
+  const d = 8.5;
+  camera.left=-d*aspect; camera.right=d*aspect; camera.top=d; camera.bottom=-d;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* -------------------- Menu mascot pixel drawing -------------------- */
+function drawMascot(){
+  const c = el('mascot'); const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled=false;
+  const px=(x,y,w,h,col)=>{ ctx.fillStyle=col; ctx.fillRect(x,y,w,h); };
+  ctx.clearRect(0,0,64,64);
+  // horns
+  px(18,8,6,8,'#ffd36e'); px(40,8,6,8,'#ffd36e');
+  // head
+  px(16,14,32,20,'#8fd9a8');
+  // eyes
+  px(24,20,6,6,'#2a2540'); px(36,20,6,6,'#2a2540');
+  // cheeks
+  px(20,28,24,4,'#ff8f88');
+  // body
+  px(20,34,24,20,'#8fd9a8');
+  // belly
+  px(24,40,16,10,'#ff9aa2');
+  // legs
+  px(22,54,7,8,'#ff9aa2'); px(35,54,7,8,'#ff9aa2');
+}
+
+/* -------------------- Boot -------------------- */
+function boot(){
+  initThree();
+  clock = new THREE.Clock();
+  bindInput();
+  drawMascot();
+  showScreen('menu');
+  el('menu-tteok').textContent = store.tteok;
+  // unlock audio on first interaction
+  const unlock=()=>{ sfx.init(); window.removeEventListener('pointerdown',unlock); };
+  window.addEventListener('pointerdown', unlock);
+  animate();
+}
+boot();
+</script>
+</body>
+</html>
