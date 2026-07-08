@@ -1,0 +1,11 @@
+# local preview / screenshot tooling (not part of the game)
+_preview.html
+_probe.js
+_rebuild.py
+_shot.js
+_shot_http.js
+_snap.sh
+_three.min.js
+node_modules/
+package.json
+package-lock.json

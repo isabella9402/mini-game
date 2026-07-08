@@ -280,8 +280,8 @@ function initThree(){
   scene=new THREE.Scene();
   // Joseon-fantasy sky: soft vertical gradient (lavender -> pink -> peach)
   scene.background=makeSkyTexture();
-  // fog fades the far rows AND turns the distant voxel mountains misty
-  scene.fog=new THREE.Fog(0xf1d9ea, 82, 165);
+  // fog fades only the far rows into the pale sky; pushed back so foreground lanes keep true colour
+  scene.fog=new THREE.Fog(0xdfeaf6, 110, 205);
 
   const aspect=window.innerWidth/window.innerHeight;
   // vertical span kept at 2*VIEW (no aspect distortion) but shifted up so the
@@ -291,12 +291,15 @@ function initThree(){
   camera.position.set(CAM.x,CAM.y,CAM.z); camera.lookAt(0,0,0);
   scene.add(camera);
 
-  scene.add(new THREE.AmbientLight(0xffffff,0.52));
-  const hemi=new THREE.HemisphereLight(0xfff2f6,0xbfe6d0,0.18); scene.add(hemi);
-  keyLight=new THREE.DirectionalLight(0xfff3e6,0.6);
-  keyLight.position.set(60,90,40); keyLight.castShadow=true;
-  keyLight.shadow.mapSize.set(1024,1024);
-  const s=24; keyLight.shadow.camera.left=-s; keyLight.shadow.camera.right=s;
+  // Flat, evenly-lit pastel look: soft high ambient fills the shade so sand/stone keep
+  // their true beige/grey tone; a LOW directional adds just a gentle diagonal soft shadow
+  // for depth without burning surfaces white.
+  scene.add(new THREE.AmbientLight(0xffffff,0.72));
+  const hemi=new THREE.HemisphereLight(0xeaf2ff,0xdfe9d6,0.22); scene.add(hemi);
+  keyLight=new THREE.DirectionalLight(0xfff6ec,0.34);
+  keyLight.position.set(52,70,34); keyLight.castShadow=true;   // fixed diagonal
+  keyLight.shadow.mapSize.set(2048,2048); keyLight.shadow.radius=4;
+  const s=26; keyLight.shadow.camera.left=-s; keyLight.shadow.camera.right=s;
   keyLight.shadow.camera.top=s; keyLight.shadow.camera.bottom=-s;
   keyLight.shadow.camera.near=1; keyLight.shadow.camera.far=260; keyLight.shadow.bias=-0.0009;
   scene.add(keyLight); scene.add(keyLight.target);
@@ -308,10 +311,10 @@ function initThree(){
 function makeSkyTexture(){
   const c=document.createElement('canvas'); c.width=8; c.height=256; const g=c.getContext('2d');
   const grd=g.createLinearGradient(0,0,0,256);
-  grd.addColorStop(0.00,'#c6b0e6');   // top: twilight lavender
-  grd.addColorStop(0.42,'#eccfe6');   // mid: soft pink
-  grd.addColorStop(0.78,'#ffe0e0');   // rose
-  grd.addColorStop(1.00,'#ffeede');   // bottom: warm peach haze
+  grd.addColorStop(0.00,'#bfe0f2');   // top: soft pastel sky-blue
+  grd.addColorStop(0.45,'#d8ecf6');   // pale blue
+  grd.addColorStop(0.78,'#f2e6f0');   // gentle lilac-pink
+  grd.addColorStop(1.00,'#fbeadf');   // bottom: warm cream haze
   g.fillStyle=grd; g.fillRect(0,0,8,256);
   const t=new THREE.CanvasTexture(c); return t;
 }
@@ -325,9 +328,9 @@ function buildBackdrop(){
   backdrop=new THREE.Group(); scene.add(backdrop);   // world-space; repositioned each frame onto the horizon
   // tiered voxel mountain silhouettes standing on the ground far ahead (fog turns them misty)
   const tiers=[
-    { z:-10, color:0x8f74bf, peak:[13,22], from:-120, to:120, gap:16 },   // darkest/back
-    { z:-5,  color:0xa88ecf, peak:[9,15],  from:-114, to:120, gap:13 },
-    { z:0,   color:0xc0a9df, peak:[6,11],  from:-110, to:116, gap:11 },    // lightest/front
+    { z:-10, color:0xd8d0ec, peak:[9,15], from:-120, to:120, gap:18 },   // pale lilac, back
+    { z:-5,  color:0xe3dcf0, peak:[7,11], from:-114, to:120, gap:15 },
+    { z:0,   color:0xeef0f8, peak:[5,8],  from:-110, to:116, gap:13 },    // near-white, front
   ];
   tiers.forEach((t,ti)=>{ let seed=ti*13.7+2;
     for(let x=t.from; x<=t.to; x+=t.gap){ seed+=1; const r=Math.abs(Math.sin(seed*91.3));
@@ -337,7 +340,7 @@ function buildBackdrop(){
     }
   });
   // drifting cloud slabs floating above the ridge
-  cloudMeshes=[]; const cloudCols=[0xffffff,0xffe6f0,0xf0e4ff];
+  cloudMeshes=[]; const cloudCols=[0xffffff,0xf4fbff,0xfdf2f8];
   for(let i=0;i<10;i++){ const g2=new THREE.Group(); const cw=7+Math.abs(Math.sin(i*33.7))*9; const col=cloudCols[i%3];
     for(let j=0;j<3;j++){ const p=bbox(cw*(1-j*0.25), 2.6, 2, col, 0.7); p.position.set((j-1)*cw*0.28, j*0.8, 0); g2.add(p); }
     g2.position.set(-90+Math.sin(i*12.9)*95, 10+(i%3)*4+Math.abs(Math.sin(i*7.7))*4, 2-(i%3)*3);
@@ -356,14 +359,53 @@ function updateBackdrop(dt){
 const GEO={ box:new THREE.BoxGeometry(1,1,1), circle:new THREE.CircleGeometry(0.5,20) };
 const matCache={};
 function mat(color,opts){
-  opts=opts||{}; const key=color+'|'+(opts.transparent?1:0)+'|'+(opts.opacity||1)+'|'+(opts.emissive||0);
+  opts=opts||{}; const rough=opts.roughness!==undefined?opts.roughness:0.95;
+  const key=color+'|'+(opts.transparent?1:0)+'|'+(opts.opacity||1)+'|'+(opts.emissive||0)+'|'+rough;
   if(matCache[key]) return matCache[key];
-  const m=new THREE.MeshLambertMaterial({ color, transparent:!!opts.transparent,
-    opacity:opts.opacity!==undefined?opts.opacity:1, emissive:opts.emissive||0x000000 });
+  // Flat matte pastel look: MeshStandardMaterial, high roughness, zero metalness (no specular sheen)
+  const m=new THREE.MeshStandardMaterial({ color, roughness:rough, metalness:0,
+    transparent:!!opts.transparent, opacity:opts.opacity!==undefined?opts.opacity:1,
+    emissive:opts.emissive||0x000000 });
   matCache[key]=m; return m;
 }
 function box(w,h,d,color,opts){ const m=new THREE.Mesh(GEO.box, mat(color,opts)); m.scale.set(w,h,d);
   m.castShadow=!(opts&&opts.noShadow); m.receiveShadow=!(opts&&opts.noRecv); return m; }
+
+/* -------------------- Flat-pastel lane surface textures (CanvasTexture, tiling) --------------------
+   Each returns a 1-tile canvas that repeats across a lane strip, giving smooth matte paving /
+   ground detail (stone slabs, checker, sand speckle, grass) exactly like 3D_map01.png. */
+const surfTexCache={};
+function makeSurfTex(kind){
+  if(surfTexCache[kind]) return surfTexCache[kind];
+  const S=64, c=document.createElement('canvas'); c.width=S; c.height=S; const g=c.getContext('2d');
+  const fill=(col)=>{ g.fillStyle=col; g.fillRect(0,0,S,S); };
+  const rrect=(x,y,w,h,r,col)=>{ g.fillStyle=col; g.beginPath();
+    g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); g.fill(); };
+  if(kind==='grass'){ fill('#a7dc9a');
+    g.globalAlpha=0.16; for(let i=0;i<26;i++){ g.fillStyle=(i&1)?'#93cf87':'#b6e3ab';
+      g.fillRect((i*37)%S,(i*23)%S,3,3); } g.globalAlpha=1;
+  } else if(kind==='sand'){ fill('#e6d6b2');             // warm muted beige (not lemon)
+    g.globalAlpha=0.16; for(let i=0;i<30;i++){ g.fillStyle=(i&1)?'#d6c39a':'#efe2c6';
+      g.fillRect((i*29)%S,(i*41)%S,2,2); } g.globalAlpha=1;
+  } else if(kind==='stone'){ fill('#b0b2ba');            // grey grout base (darker so slabs read)
+    // two staggered rows of rounded slabs -> "paved path" look
+    rrect(3,3,S-6,S/2-6,5,'#c9cbd1'); rrect(-S/2+3,S/2+3,S-6,S/2-6,5,'#c3c5cc');
+    rrect(S/2+3,S/2+3,S-6,S/2-6,5,'#c3c5cc');
+  } else if(kind==='checker'){ fill('#cccdd3');
+    g.fillStyle='#b4b6be'; g.fillRect(0,0,S/2,S/2); g.fillRect(S/2,S/2,S/2,S/2);
+    g.strokeStyle='#a9abb3'; g.lineWidth=2; g.strokeRect(1,1,S-2,S-2);
+  } else { fill('#a7dc9a'); }
+  const t=new THREE.CanvasTexture(c); t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  t.magFilter=THREE.LinearFilter; t.minFilter=THREE.LinearMipmapLinearFilter;
+  surfTexCache[kind]=t; return t;
+}
+// textured top overlay for a lane strip (smooth matte, receives soft shadow)
+function laneSurface(kind,width){
+  const t=makeSurfTex(kind); t.repeat.set(width, 1);
+  const m=new THREE.MeshStandardMaterial({ map:t, roughness:1.0, metalness:0 });
+  const p=new THREE.Mesh(new THREE.PlaneGeometry(width,1), m);
+  p.rotation.x=-Math.PI/2; p.position.y=0.021; p.receiveShadow=true; return p;
+}
 
 /* =========================================================================
    CHARACTER (billboard from GitHub, with pastel-box fallback)
@@ -495,23 +537,41 @@ function makeBillboard(key, width, opt){
 }
 
 /* -------------------- Voxel fallbacks (populate a group) -------------------- */
-function vxTree(g){ const trunk=box(0.32,0.8,0.32,0x8a6a4a); trunk.position.y=0.4; g.add(trunk);
-  const pal=Math.random()<0.5?[0xffc9c2,0xffb0c4]:[0xd3b8f0,0xc2a6e8];
-  const l1=box(1.05,0.8,1.05,pal[0]); l1.position.y=1.1; g.add(l1);
-  const l2=box(0.75,0.7,0.75,pal[1]); l2.position.y=1.7; g.add(l2); }
-function vxRock(g){ const r1=box(0.9,0.7,0.9,0xc3c0d2); r1.position.set(0,0.35,0); g.add(r1);
-  const r2=box(0.5,0.4,0.5,0xd7d4e4); r2.position.set(0.16,0.75,0.1); g.add(r2); }
+// pastel-green broadleaf tree (simple stacked cubes) — matches 3D_map01.png
+function vxTree(g){ const trunk=box(0.3,0.7,0.3,0x9a7048); trunk.position.y=0.35; g.add(trunk);
+  const greens=Math.random()<0.5?[0x9ed98a,0x8fce7b,0xb2e29a]:[0x8ecf83,0xa6dd92,0xbde7a6];
+  const l1=box(1.2,0.9,1.2,greens[0]); l1.position.y=1.0; g.add(l1);
+  const l2=box(0.92,0.78,0.92,greens[1]); l2.position.y=1.62; g.add(l2);
+  const l3=box(0.58,0.58,0.58,greens[2]); l3.position.y=2.1; g.add(l3); }
+// multi-tier pine (cây thông) — layered pastel-green canopy
+function vxPine(g){ const trunk=box(0.28,0.7,0.28,0x7c5836); trunk.position.y=0.35; g.add(trunk);
+  const a=box(1.35,0.5,1.35,0x6fb87e); a.position.y=1.0; g.add(a);
+  const b=box(1.05,0.46,1.05,0x82c78e); b.position.y=1.48; g.add(b);
+  const c=box(0.72,0.42,0.72,0x97d69f); c.position.y=1.92; g.add(c);
+  const top=box(0.3,0.42,0.3,0xa6dea8); top.position.y=2.3; g.add(top); }
+// small pastel pebble cluster (đá cuội)
+function vxRock(g){ const r1=box(0.85,0.5,0.8,0xc3c6cf); r1.position.set(0,0.25,0); g.add(r1);
+  const r2=box(0.5,0.36,0.5,0xd3d6de); r2.position.set(0.28,0.5,0.06); g.add(r2);
+  const r3=box(0.4,0.26,0.4,0xb7bcc6); r3.position.set(-0.3,0.4,-0.05); g.add(r3); }
 function vxPalanquin(g){ const body=box(1.4,0.95,1.0,0xff9aa2); body.position.y=0.9; g.add(body);
   const roof=box(1.7,0.35,1.2,0xb7a6e0); roof.position.y=1.5; g.add(roof);
   const p1=box(2.3,0.12,0.12,0xcaa27a); p1.position.set(0,0.75,0.36); g.add(p1); }
 function vxGuard(g){ const body=box(0.55,0.6,0.5,0xff8f88); body.position.y=0.7; g.add(body);
   const head=box(0.44,0.44,0.44,0xffe0c4); head.position.y=1.18; g.add(head);
   const hat=box(0.6,0.2,0.6,0x9d8ac8); hat.position.y=1.45; g.add(hat); }
-function vxTurtle(g){ const shell=box(1.6,0.4,1.0,0x8fe0c0); shell.position.y=0.2; g.add(shell);
-  const dome=box(1.1,0.32,0.7,0xa8ecd4); dome.position.y=0.46; g.add(dome); }
-function vxGate(g){ const c1=box(0.7,4,0.7,0xff9aa2); c1.position.set(-2.6,2,0); g.add(c1);
-  const c2=box(0.7,4,0.7,0xff9aa2); c2.position.set(2.6,2,0); g.add(c2);
-  const top=box(6.6,0.9,1.3,0xb7a6e0); top.position.set(0,4.2,0); g.add(top); }
+// floating stone stepping-stone (đá bước chân) — flat green-grey slab, on-theme with the river
+function vxTurtle(g){ const base=box(1.15,0.22,0.95,0x9fb8a4); base.position.y=0.05; g.add(base);
+  const top=box(0.92,0.14,0.74,0xbcccc0); top.position.y=0.19; g.add(top); }
+// Traditional wooden gate (Torii/Hongsalmun): brown posts on grey stone bases + dark lintels
+function vxGate(g){
+  const wood=0x9a6a3c, woodD=0x7c5330, stone=0xc7c8cd;
+  for(const sx of [-2.4,2.4]){ const base=box(1.0,0.5,1.0,stone); base.position.set(sx,0.25,0); g.add(base);
+    const col=box(0.6,3.6,0.6,wood); col.position.set(sx,2.3,0); g.add(col); }
+  const lintelT=box(6.4,0.55,0.95,woodD); lintelT.position.set(0,4.2,0); g.add(lintelT);   // top lintel
+  const capL=box(6.9,0.22,1.15,0x6f4a2c); capL.position.set(0,4.55,0); g.add(capL);         // dark cap
+  const lintelB=box(5.3,0.4,0.7,wood); lintelB.position.set(0,3.5,0); g.add(lintelB);       // lower tie-beam
+  const plaqueBg=box(0.9,0.6,0.12,0x8fa0c2); plaqueBg.position.set(0,3.85,0.4); g.add(plaqueBg);
+}
 function vxEagle(g){ const body=box(1,0.6,1.4,0xb79a86); g.add(body);
   const wl=box(1.6,0.15,1,0xcbb6a2); wl.position.set(-1.2,0,0); g.add(wl);
   const wr=box(1.6,0.15,1,0xcbb6a2); wr.position.set(1.2,0,0); g.add(wr);
@@ -519,26 +579,30 @@ function vxEagle(g){ const body=box(1,0.6,1.4,0xb79a86); g.add(body);
 
 /* -------------------- Public builders (image billboard + fallback) --------------------
    First arg is a FIXED WIDTH (grid units); height = width / aspect (never squished). */
-function buildTree(){ return makeBillboard('tree',SIZE.tree,{fallback:vxTree}); }
-function buildRock(){ return makeBillboard('rock',SIZE.rock,{fallback:vxRock}); }
+// Trees / rocks / stepping-stones are pure pastel voxels (match 3D_map01.png flat style)
+function buildTree(){ const g=new THREE.Group(); (Math.random()<0.5?vxTree:vxPine)(g); return g; }
+function buildRock(){ const g=new THREE.Group(); vxRock(g); return g; }
 function buildPalanquin(){ return makeBillboard('palanquin',SIZE.palanquin,{fallback:vxPalanquin}); }
 function buildGuard(){ return makeBillboard('guard',SIZE.guard,{maxH:1.35,fallback:vxGuard}); }  // chibi: only a bit taller than the cat
-function buildTurtle(){ return makeBillboard('turtle',SIZE.turtle,{fallback:vxTurtle}); }
+function buildTurtle(){ const g=new THREE.Group(); vxTurtle(g); return g; }
 function buildGate(){ return makeBillboard('gate',SIZE.gate,{noShadow:true,fallback:vxGate}); }
 function buildEagle(){ return makeBillboard('eagle',SIZE.eagle,{noShadow:true,fallback:vxEagle}); }
 
 /* -------------------- Roadside 3D voxel decorations (Joseon flavour) -------------------- */
 // Hanok with layered JADE (xanh ngọc bích) tiled roof — matches 3D_map.png
-function decoHanokRoof(){ const g=new THREE.Group();
-  const wall=box(1.5,0.95,1.2,0xf1e6cf); wall.position.y=0.48; g.add(wall);
-  const beam=box(1.55,0.14,1.25,0x9a6a3c); beam.position.y=0.98; g.add(beam);
-  const door=box(0.5,0.6,0.06,0x8a5a2b); door.position.set(0,0.4,0.62); g.add(door);
-  const r1=box(2.15,0.3,1.7,0x4fb89e); r1.position.y=1.2; g.add(r1);       // jade eaves
-  const r2=box(1.6,0.3,1.25,0x6fd0b6); r2.position.y=1.48; g.add(r2);
-  const ridge=box(2.25,0.16,0.24,0x3f9f88); ridge.position.y=1.66; g.add(ridge);
-  const end1=box(0.2,0.2,0.28,0x8fe0cc); end1.position.set(-1.05,1.28,0); g.add(end1);
-  const end2=box(0.2,0.2,0.28,0x8fe0cc); end2.position.set(1.05,1.28,0); g.add(end2);
-  return g; }
+// Hanok with layered BLUE-GREY (xám-lam) tiled roof + warm wood body — matches 3D_map01.png
+function decoHanokRoof(scale){ const g=new THREE.Group(); scale=scale||1;
+  const wall=box(2.0,1.0,1.35,0xf3ead4); wall.position.y=0.5; g.add(wall);          // cream plaster wall
+  const post=(x)=>{ const p=box(0.16,1.0,0.16,0xb58a5a); p.position.set(x,0.5,0.72); g.add(p); };
+  post(-0.85); post(-0.28); post(0.28); post(0.85);                                  // wooden posts (front)
+  const door=box(0.6,0.66,0.06,0x9a6a3c); door.position.set(0,0.42,0.73); g.add(door);
+  const beam=box(2.1,0.14,1.42,0x9a6a3c); beam.position.y=1.02; g.add(beam);         // top beam
+  const r1=box(2.75,0.3,1.95,0x8f9bbc); r1.position.y=1.24; g.add(r1);               // blue-grey eaves
+  const r2=box(2.15,0.3,1.5,0xa6b1cd); r2.position.y=1.5; g.add(r2);                  // upper tiles (lighter)
+  const ridge=box(2.85,0.17,0.26,0x7e89aa); ridge.position.y=1.68; g.add(ridge);     // ridge cap
+  const end1=box(0.22,0.22,0.3,0xb7c0d8); end1.position.set(-1.35,1.32,0); g.add(end1);
+  const end2=box(0.22,0.22,0.3,0xb7c0d8); end2.position.set(1.35,1.32,0); g.add(end2);
+  g.scale.setScalar(scale); return g; }
 // multi-tier Joseon stone pagoda (탑)
 function decoPagoda(){ const g=new THREE.Group();
   const base=box(1.0,0.35,1.0,0xc4c0cc); base.position.y=0.17; g.add(base);
@@ -579,27 +643,23 @@ function decoWell(){ const g=new THREE.Group();
   const p2=box(0.12,0.9,0.12,0x8a6a4a); p2.position.set(0.35,0.9,0); g.add(p2);
   const roof=box(1.1,0.16,0.7,0xb7a6e0); roof.position.y=1.4; g.add(roof);
   return g; }
-// continuous stone wall lining BOTH road edges (called for every lane -> unbroken wall)
-function laneWall(g,row){
-  [-1,1].forEach(side=>{ if(rowRand(row,side*3+11)<0.85){ const w=decoWall(); w.position.set(side*SIDE_MIN,0,0); g.add(w); } });
-}
-// packed village decoration on the grass shoulders (Hanok rows, pagodas, pines, lanterns)
+// SPARSE shoulder decoration (outside the play area) — a lone pine or rock cluster now and
+// then, keeping the wide airy margins of 3D_map01.png. No walls, no packed village rows.
 function sprinkleSideDecor(g,row){
   [-1,1].forEach(side=>{
-    for(let col=SIDE_MIN+1; col<=SIDE_MAX; col++){
-      const r=rowRand(row, side*97+col*13);
-      if(r>=0.62) continue;                                   // some gaps
-      let d;
-      if(r<0.34) d=decoHanokRoof();
-      else if(r<0.46) d=decoPine();
-      else if(r<0.52) d=decoPagoda();
-      else if(r<0.58) d=decoLantern();
-      else d=decoWell();
-      d.position.set(side*col, 0, (rowRand(row,col*5)-0.5)*0.5);
-      d.rotation.y = side<0 ? Math.PI*0.14 : -Math.PI*0.14;
-      g.add(d);
-    }
+    const r=rowRand(row, side*97+7);
+    if(r>=0.34) return;                                       // most shoulders stay empty
+    const col=SIDE_MIN+1+Math.floor(rowRand(row,side*13)*(SIDE_MAX-SIDE_MIN-1));
+    const d = r<0.2 ? buildTree() : buildRock();
+    d.position.set(side*col, 0, (rowRand(row,col*5)-0.5)*0.4);
+    g.add(d);
   });
+}
+// broken line of flat stone stepping-stones across a river (safe to stand on) — like 3D_map01.png
+function buildSteppingStones(g,cols){
+  const tints=[0xb9c2b0,0xbfc6cc,0xa9c2b4];
+  cols.forEach((c,i)=>{ const s=box(0.82,0.2,0.82, tints[i%3]); s.position.set(c,0.0,(i%2?0.18:-0.18)); s.receiveShadow=true; g.add(s);
+    const cap=box(0.7,0.06,0.7, 0xd2d8d0); cap.position.set(c,0.12,(i%2?0.18:-0.18)); g.add(cap); });
 }
 
 /* -------------------- Particles (3D voxel) -------------------- */
@@ -656,83 +716,106 @@ function updateWillo(){
 /* -------------------- Lanes -------------------- */
 let lanes={}; let feverActive=false;
 function rowRand(row,salt){ let x=Math.sin(row*127.1+(salt||0)*311.7)*43758.5453; return x-Math.floor(x); }
-function laneColor(type,row){
-  if(type==='grass') return (row%2===0)?0x9edd93:0x8fd384;   // soft warm green
-  if(type==='road')  return (row%2===0)?0xf0dcbe:0xe7d0ad;   // warm sandy path (3D_map tone)
-  if(type==='water') return 0x8fcdf0;                        // pale pastel stream
-  return 0x9edd93;
+// ---- Lane-strip design (parallel bands, 3D_map01.png order). One cycle = 8 conceptual làn ----
+const LANE_CYCLE=[
+  {t:'grass',  role:'gate'},    // làn1: cỏ pastel + cổng gỗ (Torii) + đá/cây thưa
+  {t:'grass',  role:'grass'},
+  {t:'stone',  role:'path'},    // làn2: đường lát đá xám nhạt
+  {t:'stone',  role:'path'},
+  {t:'sand',   role:'path'},    // làn3: đường đất/cát beige
+  {t:'sand',   role:'path'},
+  {t:'grass',  role:'hanok'},   // làn4: cỏ + Hanok lớn (mái xám-lam)
+  {t:'grass',  role:'grass'},
+  {t:'water',  role:'river'},   // làn5: sông pastel + stepping stones
+  {t:'grass',  role:'hanokS'},  // làn6: cỏ + Hanok nhỏ
+  {t:'grass',  role:'grass'},
+  {t:'checker',role:'path'},    // làn7: đường lát đá ô vuông
+  {t:'checker',role:'path'},
+  {t:'sand',   role:'pine'},    // làn8: cát + cây thông + cụm đá cuội
+  {t:'sand',   role:'pineG'},
+  {t:'sand',   role:'pineG'},
+];
+const CYCLE=LANE_CYCLE.length;
+function laneSpec(row){ return LANE_CYCLE[((row%CYCLE)+CYCLE)%CYCLE]; }
+function laneColor(type){                      // slab side/edge colour (a touch darker than the top)
+  switch(type){ case 'grass': return 0x8fd08a; case 'sand': return 0xd4c197;
+    case 'stone': return 0xa9abb3; case 'checker': return 0xafb1b9; case 'water': return 0x9fd4ef;
+    default: return 0x8fd08a; }
 }
 function makeLane(row){
   const g=new THREE.Group(); g.position.z=-row*TILE;
-  let type;
-  if(currentGameMode==='timeattack'){
-    if(row<=3) type='grass'; else if(row>=TA_GOAL) type='gate';
-    else { const r=rowRand(row,1); type=r<0.46?'grass':r<0.76?'road':'water'; }
-  } else {
-    if(row<=3) type='grass'; else { const r=Math.random(); type=r<0.42?'grass':r<0.74?'road':'water'; }
-  }
-  if(type==='water' && lanes[row-1] && lanes[row-1].type==='water') type='grass';
-  const lane={ row, type, group:g, dir:1, speed:0, mobs:[], statics:{}, items:{}, tiles:[], baseColor:0, isGate:type==='gate' };
+  let type, role;
+  if(row<=3){ type='grass'; role='grass'; }                                  // safe start band
+  else if(currentGameMode==='timeattack' && row>=TA_GOAL){ type='gate'; role='finish'; }
+  else { const sp=laneSpec(row); type=sp.t; role=sp.role; }
+  const isPath=(role==='path');
+  const lane={ row, type, role, group:g, dir:1, speed:0, mobs:[], statics:{}, items:{}, tiles:[], baseColor:0xffffff, isGate:type==='gate' };
+  const W=2*RENDER_HALF+1;
 
-  const baseColor=laneColor(type,row); lane.baseColor=baseColor;
+  // ---- surface (flat matte strip + smooth textured top) ----
   if(type==='water'){
-    const water=box(2*RENDER_HALF+1,0.5,1,0x8ec4ee,{transparent:true,opacity:0.85,noShadow:true});
-    water.position.set(0,-0.45,0); water.receiveShadow=true; g.add(water); lane.tiles.push(water);
-    const rim=box(2*RENDER_HALF+1,0.06,1,0xbfe0f7,{transparent:true,opacity:0.6,noShadow:true}); rim.position.set(0,-0.17,0); g.add(rim);
+    const water=box(W,0.5,1,0x9fd4ef,{transparent:true,opacity:0.9,noShadow:true,roughness:0.6});
+    water.position.set(0,-0.45,0); water.receiveShadow=true; g.add(water);
+    const rim=box(W,0.06,1,0xcdeaf7,{transparent:true,opacity:0.55,noShadow:true}); rim.position.set(0,-0.16,0); g.add(rim);
+    lane.tiles.push(water); lane.baseColor=0x9fd4ef;
   } else {
-    // single ground strip per lane (perf: 1 mesh instead of ~33 with the wide map)
-    const t=box(2*RENDER_HALF+1,0.5,1,baseColor,{noShadow:true}); t.receiveShadow=true; t.position.set(0,-0.25,0); g.add(t); lane.tiles.push(t);
+    const strip=box(W,0.5,1, laneColor(type), {noShadow:true,noRecv:true}); strip.position.set(0,-0.25,0); g.add(strip);
+    const surf=laneSurface(type==='gate'?'grass':type, W); g.add(surf); lane.tiles.push(surf);
   }
-  if(type==='gate'){ const gate=buildGate(); g.add(gate); lane.gateGroup=gate; }
+  if(type==='gate'){ const gate=buildGate(); g.add(gate); lane.gateGroup=gate; }   // timeattack finish torii
 
-  // GRASS: only trees/rocks, grid-aligned, <=30% coverage, min 2-tile gaps
-  if(type==='grass' && row>4){
-    const COLS = COL_MAX-COL_MIN+1;                 // playable columns
-    const maxObj = Math.floor(COLS*0.3);            // hard cap = 30% coverage
-    const placed=[];
-    for(let x=COL_MIN;x<=COL_MAX;x++){
-      if(placed.length>=maxObj) break;
-      if(placed.length && (x-placed[placed.length-1])<2) continue;   // keep >=1 empty column between objects
-      const rr=(currentGameMode==='timeattack')?rowRand(row,x*7+3):Math.random();
-      if(rr<0.24){
-        const kind=(currentGameMode==='timeattack'?rowRand(row,x*13):Math.random())<0.6?'tree':'rock';
-        const obs=kind==='tree'?buildTree():buildRock();
-        obs.position.set(x,0,0);                     // centred on the grid cell
-        g.add(obs); lane.statics[x]={ kind, group:obs, solid:true }; placed.push(x);
-      }
+  // ---- deterministic signature props (sparse, wide gaps) ----
+  const place=(mk,x,solid)=>{ const o=mk(); o.position.set(x,0,0); g.add(o); if(solid) lane.statics[x]={ kind:'deco', group:o, solid:true }; return o; };
+  if(role==='gate' && row>4){
+    const t=buildGate(); t.position.set(6,0,0.1); g.add(t); lane.gateGroup=t;        // Torii landmark (non-blocking)
+    place(()=>buildRock(), -5, true); if(rowRand(row,3)<0.5) place(()=>buildTree(), 2, true);
+  } else if(role==='hanok' || role==='hanokS'){
+    const s = role==='hanok'?1.05:0.8, hx = role==='hanok'? -4 : 5;
+    const h=decoHanokRoof(s); h.position.set(hx,0,0); h.rotation.y=-Math.PI*0.12; g.add(h);
+    lane.statics[hx]={kind:'deco',group:h,solid:true}; lane.statics[hx+1]={kind:'deco',group:h,solid:true};
+    if(rowRand(row,9)<0.6) place(()=>buildTree(), hx>0?-4:4, true);
+  } else if(role==='pine'){
+    place(()=>buildTree(), -6, true); place(()=>buildTree(), 4, true);
+    if(rowRand(row,4)<0.5) place(()=>buildRock(), 0, true);
+  } else if(role==='pineG'){
+    if(rowRand(row,5)<0.4) place(()=>buildRock(), Math.round((rowRand(row,6)-0.5)*12), true);
+    if(rowRand(row,7)<0.3) place(()=>buildTree(), Math.round((rowRand(row,8)-0.5)*12), true);
+  } else if(role==='grass' && row>4){
+    // mostly one prop, occasionally a distant second — keep the field open
+    if(rowRand(row,2)<0.55){ const x=Math.round((rowRand(row,3)-0.5)*18);
+      place(()=> rowRand(row,5)<0.55?buildTree():buildRock(), x, true);
+      if(rowRand(row,11)<0.25){ const x2=Math.round((rowRand(row,7)-0.5)*18);
+        if(Math.abs(x2-x)>=4) place(()=>buildRock(), x2, true); }
     }
   }
-  // Roadside 3D-voxel village on the shoulders (outside play area). Wall lines every
-  // lane for an unbroken stone edge; grass lanes also get packed Hanok/pagoda/pine.
-  if(type!=='gate'){ laneWall(g,row); if(type==='grass') sprinkleSideDecor(g,row); }
-  // ROAD: ONLY moving obstacles (palanquin/guard). Max 2, spaced >=6 grid units. No statics.
-  if(type==='road'){
-    const dir=(rowRand(row,5)<0.5)?1:-1; lane.dir=dir; lane.speed=1.0+rowRand(row,9)*1.2;  // 느린 기본속도 (speedMul로 가속)
-    const count=1+(rowRand(row,11)<0.55?1:0);       // 1 or 2 obstacles only
-    const span=2*(RENDER_HALF+2); const gap=span/count;   // gap >= span/2 (~12) -> big crossing windows
+  if(type!=='gate') sprinkleSideDecor(g,row);   // sparse shoulder pine/rock
+
+  // ---- moving obstacles on PATH lanes (가마 / 근위병) ----
+  if(isPath){
+    const dir=(rowRand(row,5)<0.5)?1:-1; lane.dir=dir; lane.speed=1.0+rowRand(row,9)*1.2;
+    const count=1+(rowRand(row,11)<0.5?1:0);
+    const span=2*(RENDER_HALF+2), gap=span/count;
     for(let i=0;i<count;i++){ const isPal=rowRand(row,i*3+1)<0.5; const mob=isPal?buildPalanquin():buildGuard();
-      mob.position.set(-(RENDER_HALF+2)+i*gap, 0, 0);      // even spacing, no free-random offset
+      mob.position.set(-(RENDER_HALF+2)+i*gap, 0, 0);
       if(dir<0){ if(mob.userData.bb) mob.userData.bb.scale.x=-1; else mob.rotation.y=Math.PI; }
       g.add(mob); lane.mobs.push({ model:mob, kind:isPal?'palanquin':'guard', w:isPal?1.5:0.8, dead:false }); }
   }
-  // WATER: divine turtles (rideable stepping stones) + optional wooden bridge (safe crossing)
-  if(type==='water'){
-    const dir=(rowRand(row,7)<0.5)?1:-1; lane.dir=dir; lane.speed=1.0+rowRand(row,3)*0.8;
-    // fixed-chance wooden bridge spanning 3 columns (safe walk-across, like 3D_map.png)
-    if(rowRand(row,21)<0.45){
-      const c=COL_MIN+2+Math.floor(rowRand(row,22)*(COL_MAX-COL_MIN-3));
-      lane.bridge=[c-1,c,c+1]; buildBridge(g,c);
-    }
-    const count=4+Math.floor(rowRand(row,4)*2); const gap=(2*RENDER_HALF+2)/count;
+  // ---- RIVER: static stepping-stones (safe) + a few moving stone-turtles ----
+  if(role==='river'){
+    const dir=(rowRand(row,7)<0.5)?1:-1; lane.dir=dir; lane.speed=0.8+rowRand(row,3)*0.7;
+    const c=COL_MIN+3+Math.floor(rowRand(row,22)*(COL_MAX-COL_MIN-5));
+    lane.bridge=[c-1,c,c+1]; buildSteppingStones(g,[c-1,c,c+1]);
+    const count=3+Math.floor(rowRand(row,4)*2), gap=(2*RENDER_HALF+2)/count;
     for(let i=0;i<count;i++){ const t=buildTurtle(); t.position.set(-RENDER_HALF-1+i*gap+rowRand(row,i*5)*1.0,-0.1,0);
       if(dir<0 && t.userData.bb) t.userData.bb.scale.x=-1; g.add(t);
       lane.mobs.push({ model:t, kind:'turtle', w:1.3, dead:false }); }
   }
-  // item balancer (grass/road on open cells; water only on the safe bridge)
+
+  // ---- item balancer ----
   if(row>ITEM_SAFE_ROWS && type!=='gate'){
     const rnd=s=>(currentGameMode==='timeattack')?rowRand(row,s):Math.random();
     const pick=()=>{ const r=rnd(303); return r<0.68?'tteok':r<0.88?'chili':'giant'; };
-    if(type==='water'){
+    if(role==='river'){
       if(lane.bridge && rnd(101)<0.6){ const x=lane.bridge[1]; lane.items[x]=spawnItem(g,x,pick()); }
     } else {
       const chance=Math.max(0.3,0.55-(row-ITEM_SAFE_ROWS)*0.0006);
@@ -804,7 +887,7 @@ function resolveLanding(){
     if(lane.bridge && lane.bridge.includes(P.gridX)){ /* standing safely on the wooden bridge */ }
     else { let onT=null; for(const m of lane.mobs){ if(m.kind==='turtle'&&Math.abs(m.model.position.x-P.worldX)<(m.w/2+0.35)){ onT=m; break; } }
       if(onT) P.ridingTurtle=onT; else if(run.stealthTimer<=0&&!feverActive) die('drown'); } }
-  if(lane.type==='road') checkVehicleCollision(lane);
+  if(lane.role==='path') checkVehicleCollision(lane);
   if(currentGameMode==='timeattack'&&P.row>=TA_GOAL&&!run.finished) timeAttackWin();
 }
 function collectItem(lane,it,x){ it.taken=true; lane.group.remove(it.group); delete lane.items[x]; const wz=-lane.row*TILE;
@@ -838,7 +921,7 @@ function updateMobs(dt){ const slow=feverActive?0.5:1, mul=gameSpeedMul();
   for(const k in lanes){ const lane=lanes[k]; if(!lane.mobs.length) continue; const spd=lane.speed*lane.dir*slow*mul;
     for(const m of lane.mobs){ if(m.dead) continue; m.model.position.x+=spd*dt;
       if(m.model.position.x>RENDER_HALF+1.5) m.model.position.x=-RENDER_HALF-1.5; else if(m.model.position.x<-RENDER_HALF-1.5) m.model.position.x=RENDER_HALF+1.5; }
-    if(!P.jumping&&P.alive&&lane.row===P.row&&lane.type==='road') checkVehicleCollision(lane);
+    if(!P.jumping&&P.alive&&lane.row===P.row&&lane.role==='path') checkVehicleCollision(lane);
     if(lane.type==='water'){ for(const m of lane.mobs){ m.model.position.y=Math.sin(run.elapsed*2+m.model.position.x)*0.05; } }
   } }
 function updateRiding(){ if(!P.ridingTurtle) return; const m=P.ridingTurtle; if(m.dead){ P.ridingTurtle=null; return; }
