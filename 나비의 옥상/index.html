@@ -786,10 +786,13 @@ function roundRectFill(x,y,w,h,r,fill,stroke){
 /* =========================================================================
    Overlay xoay ngang (§I) — pause khi cầm dọc
    ========================================================================= */
+// Chỉ nhắc xoay ngang trên thiết bị CẢM ỨNG (mobile). Trên desktop/khung nhúng
+// (con trỏ chuột), dù khung có dạng đứng thì canvas vẫn tự letterbox -> chơi được ngay.
+const isTouchDevice = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window);
 function checkOrientation(){
-  const portrait = window.innerHeight > window.innerWidth;
-  paused = portrait;
-  toggle('rotate', portrait);
+  const block = isTouchDevice && (window.innerHeight > window.innerWidth);
+  paused = block;
+  toggle('rotate', block);
 }
 window.addEventListener('resize', ()=>{ setupCanvas(); checkOrientation(); });
 window.addEventListener('orientationchange', ()=>{ setupCanvas(); checkOrientation(); });
