@@ -54,7 +54,6 @@
   #timer-box{ background:rgba(75,59,87,.9); color:#fff; border:3px solid #fff; border-radius:10px; padding:6px 14px; font-weight:900; font-size:22px; }
   #timer-box.warn{ background:#e5484d; animation:pulse .5s infinite alternate; }
   @keyframes pulse{ from{transform:scale(1);} to{transform:scale(1.08);} }
-  #ghost-box{ margin-top:6px; background:rgba(80,150,255,.9); color:#fff; border:3px solid #fff; border-radius:10px; padding:5px 12px; font-weight:900; font-size:14px; }
   #fever-wrap{ position:absolute; top:calc(env(safe-area-inset-top,0) + 12px); right:12px; width:150px; }
   #fever-label{ font-size:12px; font-weight:900; color:var(--ink); text-shadow:1px 1px 0 #fff; text-align:right; }
   #fever-bar{ height:18px; background:rgba(255,255,255,.7); border:3px solid var(--ink); border-radius:10px; overflow:hidden; margin-top:2px; }
@@ -127,7 +126,6 @@
   <div class="menu-btns">
     <button class="pbtn peach" data-mode="infinite">무한 모드</button>
     <button class="pbtn mint" data-mode="timeattack">타임어택 모드</button>
-    <button class="pbtn sky" data-mode="ghost">고스트 레이스</button>
     <button class="pbtn yellow" id="open-gacha">도감 &amp; 가챠</button>
   </div>
   <div id="tteok-menu">🍡 보유 떡: <span id="menu-tteok">0</span>개</div>
@@ -142,7 +140,6 @@
   <button id="pause-btn" title="일시정지">⏸<span>일시정지</span></button>
   <div id="center-top">
     <div id="timer-box" class="hidden">남은 시간: <span id="hud-time">30</span>초</div>
-    <div id="ghost-box" class="hidden">고스트와의 거리: <span id="hud-ghost">0</span>칸</div>
   </div>
   <div id="fever-wrap"><div id="fever-label">피버 게이지</div><div id="fever-bar"><div id="fever-fill"></div></div></div>
   <div id="controls">
@@ -200,7 +197,6 @@ const GITHUB_CONFIG = {
   baseUrl:   "https://raw.githubusercontent.com/isabella9402/mini-game/main/resources/",
   baseUrl3D: "https://raw.githubusercontent.com/isabella9402/mini-game/main/3D_resources/",
   characterDefault: "3D_main character.png",   // 3D 한복 삼색 고양이 (3D_resources)
-  characterGhost:   "3D_고스트 도깨비01.png",   // 고스트 레이스 전용 (3D_resources)
 };
 
 /* -------------------- Web Audio Retro SoundFX -------------------- */
@@ -258,7 +254,7 @@ const RARITY_LABEL={ C:'COMMON', R:'RARE', SSR:'SSR' };
 /* -------------------- State -------------------- */
 const State={ MENU:'MENU', PLAYING:'PLAYING', GACHA:'GACHA', RESULT:'RESULT' };
 let gameState=State.MENU, currentGameMode=null;
-const TILE=1, COL_MIN=-11, COL_MAX=11, RENDER_HALF=16, TA_GOAL=200, TA_TIME=30, ITEM_SAFE_ROWS=10;
+const TILE=1, COL_MIN=-11, COL_MAX=11, RENDER_HALF=16, TA_GOAL=200, TA_TIME=30, ITEM_SAFE_ROWS=3;
 // 플레이 가능 컬럼은 -11..11 (넓은 맵). RENDER_HALF는 그보다 넉넉히 커서 갓길 장식 공간 확보.
 const SIDE_MIN=COL_MAX+1, SIDE_MAX=RENDER_HALF-1;   // 갓길(장식 전용) 범위
 
@@ -272,7 +268,9 @@ function currentSkin(){ return SKINS.find(s=>s.id===store.equipped)||SKINS[0]; }
 let renderer, scene, camera, keyLight;
 const canvas=document.getElementById('game-canvas');
 let VIEW=15;        // 넓어진 맵(-11..11)을 한눈에 담도록 확대
-const CAM_OFF=40;   // equal x=y=z isometric offset (distance ~69)
+// Crossy-Road isometric offset: higher & more behind (+z) with a smaller side (+x)
+// so the main road runs diagonally from the bottom up toward the top of screen.
+const CAM={ x:30, y:47, z:43 };   // distance ~69 (fog stays tuned)
 function initThree(){
   renderer=new THREE.WebGLRenderer({ canvas, antialias:true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
@@ -290,7 +288,7 @@ function initThree(){
   // player sits in the lower third and the sky/mountains fill the top.
   camera=new THREE.OrthographicCamera(-VIEW*aspect, VIEW*aspect, VIEW*1.3, -VIEW*0.7, 0.1, 500);
   // True 3D isometric: equal offset (x=y=z) direction -> lookAt centre
-  camera.position.set(CAM_OFF,CAM_OFF,CAM_OFF); camera.lookAt(0,0,0);
+  camera.position.set(CAM.x,CAM.y,CAM.z); camera.lookAt(0,0,0);
   scene.add(camera);
 
   scene.add(new THREE.AmbientLight(0xffffff,0.52));
@@ -371,7 +369,6 @@ function box(w,h,d,color,opts){ const m=new THREE.Mesh(GEO.box, mat(color,opts))
    CHARACTER (billboard from GitHub, with pastel-box fallback)
    ========================================================================= */
 let charTexture=null, charAspect=0.7, charReady=false;      // main character (고양이)
-let ghostTexture=null, ghostAspect=0.7, ghostReady=false;   // ghost racer (고스트 도깨비01)
 const CHAR_W=1.0;          // 캐릭터: 1칸에 딱 맞게 (height는 aspect로 계산)
 const LANE_TOP=0;          // top surface Y of a lane box (box centred at -0.25, height 0.5)
 // ---- Strict visual size hierarchy (fixed WIDTHS in grid units) ----
@@ -381,7 +378,13 @@ function chromaKeyTrim(img){
   const w=img.width,h=img.height; const c=document.createElement('canvas'); c.width=w; c.height=h;
   const x=c.getContext('2d'); x.drawImage(img,0,0);
   let dat; try{ dat=x.getImageData(0,0,w,h); }catch(e){ return c; }
-  const d=dat.data; const isBg=i=> d[i+3]<20 || (d[i]>236&&d[i+1]>236&&d[i+2]>236);
+  const d=dat.data;
+  // background colour = average of the 4 corners (handles white OR light-grey/blue jpg bg)
+  const cor=(px,py)=>{ const i=(py*w+px)*4; return [d[i],d[i+1],d[i+2]]; };
+  const cs=[cor(0,0),cor(w-1,0),cor(0,h-1),cor(w-1,h-1)];
+  let br=0,bg=0,bb=0; for(const q of cs){ br+=q[0]; bg+=q[1]; bb+=q[2]; } br/=4; bg/=4; bb/=4;
+  const TOL=4200;   // squared colour distance (~37/channel) — remove near-bg, keep the art
+  const isBg=i=>{ if(d[i+3]<20) return true; const dr=d[i]-br,dg=d[i+1]-bg,db=d[i+2]-bb; return (dr*dr+dg*dg+db*db)<TOL; };
   const seen=new Uint8Array(w*h), stack=[];
   for(let px=0;px<w;px++){ stack.push(px,(h-1)*w+px); }
   for(let py=0;py<h;py++){ stack.push(py*w, py*w+(w-1)); }
@@ -413,25 +416,21 @@ function loadCharacter(){
   const load=document.getElementById('loading'); load.classList.remove('hidden');
   let done=0; const finish=()=>{ if(++done>=1) load.classList.add('hidden'); };
   loadCharImage(GITHUB_CONFIG.characterDefault, (tex,asp,cv)=>{
-    if(tex){ charTexture=tex; charAspect=asp; charReady=true; rebuildCharacterVisual(player,false); drawMascotFrom(cv); }
+    if(tex){ charTexture=tex; charAspect=asp; charReady=true; rebuildCharacterVisual(player); drawMascotFrom(cv); }
     else { load.textContent='이미지 로드 실패 — 대체 큐브 사용'; setTimeout(()=>load.classList.add('hidden'),1500); }
     finish();
   });
-  loadCharImage(GITHUB_CONFIG.characterGhost, (tex,asp)=>{
-    if(tex){ ghostTexture=tex; ghostAspect=asp; ghostReady=true; if(ghostModel) rebuildCharacterVisual(ghostModel,true); }
-  });
 }
-// build/replace the visual child (billboard plane OR fallback box) inside a rig.
+// build/replace the visual child (billboard plane OR fallback box) inside the player rig.
 // Fixed WIDTH; height = width / aspect (never squished); bottom pinned to lane top.
-function rebuildCharacterVisual(rig, ghost){
+function rebuildCharacterVisual(rig){
   if(!rig) return;
   if(rig.userData.visual){ rig.remove(rig.userData.visual); }
-  const tex = ghost?ghostTexture:charTexture, asp = ghost?ghostAspect:charAspect, ready = ghost?ghostReady:charReady;
   let vis;
-  if(ready && tex){
-    const w=CHAR_W, h=w/asp;                          // keep aspect, derive height
-    const m=new THREE.MeshBasicMaterial({ map:tex, transparent:true, alphaTest:0.35, side:THREE.DoubleSide,
-      depthWrite:true, color: ghost?0xaee0ff : currentSkin().tint, opacity: ghost?0.6:1 });
+  if(charReady && charTexture){
+    const w=CHAR_W, h=w/charAspect;                   // keep aspect, derive height
+    const m=new THREE.MeshBasicMaterial({ map:charTexture, transparent:true, alphaTest:0.35, side:THREE.DoubleSide,
+      depthWrite:true, color: currentSkin().tint, opacity:1 });
     const geo=new THREE.PlaneGeometry(w,h); geo.translate(0,h/2,0);   // bottom-pivot -> stays on ground when scaled
     vis=new THREE.Mesh(geo, m);
     vis.position.y = LANE_TOP;                        // bottom sits exactly on the lane surface
@@ -439,7 +438,7 @@ function rebuildCharacterVisual(rig, ghost){
   } else {
     // FALLBACK: pastel box so the game never crashes / stays playable
     const h=1.6;
-    vis=box(0.8,h,0.6, ghost?0x8fd0ff:0xa9c8ff, ghost?{transparent:true,opacity:0.6}:{});
+    vis=box(0.8,h,0.6, 0xa9c8ff, {});
     vis.position.y=LANE_TOP + h/2; vis.userData.baseH=h;
     const horn1=box(0.12,0.28,0.12,0xffe08a); horn1.position.set(-0.18,h/2+0.2,0); vis.add(horn1);
     const horn2=box(0.12,0.28,0.12,0xffe08a); horn2.position.set(0.18,h/2+0.2,0); vis.add(horn2);
@@ -454,23 +453,21 @@ function rebuildCharacterVisual(rig, ghost){
    fallback used until an image loads or if the network fails.
    ========================================================================= */
 const IMG_ENV = {
-  tree:      ['고목01.png','고목02.png','고목03.png','고목04.png','고목05.png','고목06.png'],
-  rock:      ['바위01.png','바위02.png','바위03.png','바위04.png','바위05.png'],
-  palanquin: ['Gama 1.png','Gama 2.png','Gama 3.png','Gama 4.png'],
-  guard:     ['근위병.png'],
-  turtle:    ['3D_거북 신령01.png'],          // 3D 버전 (3D_resources)
-  gate:      ['결승 궁궐 문.png'],
-  eagle:     ['독수리01.png'],
-  tteok:     ['ssotoek.png','붕어빵.png','십원빵.png'],
-  chili:     ['고추01.png','고추03.png','고추04.png'],
-  giant:     ['부적01.png','부적02.png','부적03.png'],
+  tree:      ['3D_tree01.jpg','3D_tree02.jpg','3D_tree03.jpg','3D_tree04.jpg'],
+  rock:      ['3D_rock01.jpg','3D_rock02.jpg'],
+  palanquin: ['3D_gama01.jpg','3D_gama02.jpg','3D_gama03.jpg','3D_gama04.jpg'],
+  guard:     [],                              // no 3D art yet -> voxel fallback (근위병)
+  turtle:    ['3D_turtle01.jpg','3D_turtle02.jpg'],
+  gate:      [],                              // no 3D art yet -> voxel gate fallback
+  eagle:     ['3D_eagle.jpg'],
+  tteok:     ['3D_소떡.jpg','3D_붕어빵.jpg'],
+  chili:     ['3D_chili.jpg'],
+  giant:     ['3D_charm.jpg','3D_charm02.jpg'],
 };
-// keys whose images live in the 3D_resources folder instead of resources/
-const IMG_ENV_BASE = { turtle: 'baseUrl3D' };
 const TEX = {};   // key -> [{tex,aspect}, ...]
 function loadEnvResources(){
   for(const key in IMG_ENV){ TEX[key]=[];
-    const base = GITHUB_CONFIG[IMG_ENV_BASE[key] || 'baseUrl'];
+    const base = GITHUB_CONFIG.baseUrl3D;      // all art now lives in /3D_resources
     IMG_ENV[key].forEach(f=>{ const img=new Image(); img.crossOrigin='anonymous';
       img.onload=()=>{ try{ const cv=chromaKeyTrim(img); const t=new THREE.CanvasTexture(cv);
         t.magFilter=THREE.LinearFilter; t.minFilter=THREE.LinearFilter; t.generateMipmaps=false;
@@ -531,11 +528,36 @@ function buildGate(){ return makeBillboard('gate',SIZE.gate,{noShadow:true,fallb
 function buildEagle(){ return makeBillboard('eagle',SIZE.eagle,{noShadow:true,fallback:vxEagle}); }
 
 /* -------------------- Roadside 3D voxel decorations (Joseon flavour) -------------------- */
+// Hanok with layered JADE (xanh ngọc bích) tiled roof — matches 3D_map.png
 function decoHanokRoof(){ const g=new THREE.Group();
-  const wall=box(1.3,0.8,1.0,0xf3ead6); wall.position.y=0.4; g.add(wall);
-  const r1=box(1.9,0.28,1.5,0xb7a6e0); r1.position.y=1.0; g.add(r1);
-  const r2=box(1.4,0.28,1.1,0xc9bcec); r2.position.y=1.28; g.add(r2);
-  const ridge=box(2.0,0.12,0.22,0x9d8ac8); ridge.position.y=1.44; g.add(ridge);
+  const wall=box(1.5,0.95,1.2,0xf1e6cf); wall.position.y=0.48; g.add(wall);
+  const beam=box(1.55,0.14,1.25,0x9a6a3c); beam.position.y=0.98; g.add(beam);
+  const door=box(0.5,0.6,0.06,0x8a5a2b); door.position.set(0,0.4,0.62); g.add(door);
+  const r1=box(2.15,0.3,1.7,0x4fb89e); r1.position.y=1.2; g.add(r1);       // jade eaves
+  const r2=box(1.6,0.3,1.25,0x6fd0b6); r2.position.y=1.48; g.add(r2);
+  const ridge=box(2.25,0.16,0.24,0x3f9f88); ridge.position.y=1.66; g.add(ridge);
+  const end1=box(0.2,0.2,0.28,0x8fe0cc); end1.position.set(-1.05,1.28,0); g.add(end1);
+  const end2=box(0.2,0.2,0.28,0x8fe0cc); end2.position.set(1.05,1.28,0); g.add(end2);
+  return g; }
+// multi-tier Joseon stone pagoda (탑)
+function decoPagoda(){ const g=new THREE.Group();
+  const base=box(1.0,0.35,1.0,0xc4c0cc); base.position.y=0.17; g.add(base);
+  let y=0.35;
+  for(let k=0;k<5;k++){ const s=0.9-k*0.13; const body=box(s*0.62,0.26,s*0.62,0xd6d2dc); body.position.y=y+0.13; g.add(body);
+    const roof=box(s,0.14,s,0xb7b3c2); roof.position.y=y+0.33; g.add(roof); y+=0.4; }
+  const top=box(0.14,0.3,0.14,0x9d99aa); top.position.y=y+0.1; g.add(top);
+  return g; }
+// voxel pine tree (cây tùng) — dark twisted trunk + layered green canopy
+function decoPine(){ const g=new THREE.Group();
+  const trunk=box(0.34,1.3,0.34,0x6e4a2e); trunk.position.y=0.65; g.add(trunk);
+  const a=box(1.5,0.5,1.5,0x4f9463); a.position.y=1.3; g.add(a);
+  const b=box(1.15,0.45,1.15,0x5fae74); b.position.y=1.75; g.add(b);
+  const c=box(0.75,0.4,0.75,0x74c98c); c.position.y=2.15; g.add(c);
+  return g; }
+// stone wall segment lining the road edge (bức tường đá)
+function decoWall(){ const g=new THREE.Group();
+  const w=box(1.02,0.62,0.5,0xbdb6c6); w.position.y=0.31; g.add(w);
+  const cap=box(1.06,0.12,0.58,0xd6d0de); cap.position.y=0.66; g.add(cap);
   return g; }
 function decoLantern(){ const g=new THREE.Group();
   const pole=box(0.12,1.4,0.12,0x6e4a30); pole.position.y=0.7; g.add(pole);
@@ -557,19 +579,24 @@ function decoWell(){ const g=new THREE.Group();
   const p2=box(0.12,0.9,0.12,0x8a6a4a); p2.position.set(0.35,0.9,0); g.add(p2);
   const roof=box(1.1,0.16,0.7,0xb7a6e0); roof.position.y=1.4; g.add(roof);
   return g; }
-const SIDE_DECOR=[decoHanokRoof, decoLantern, decoFence, decoWell];
+// continuous stone wall lining BOTH road edges (called for every lane -> unbroken wall)
+function laneWall(g,row){
+  [-1,1].forEach(side=>{ if(rowRand(row,side*3+11)<0.85){ const w=decoWall(); w.position.set(side*SIDE_MIN,0,0); g.add(w); } });
+}
+// packed village decoration on the grass shoulders (Hanok rows, pagodas, pines, lanterns)
 function sprinkleSideDecor(g,row){
-  // place a few decorations on each shoulder (columns outside the playable area)
   [-1,1].forEach(side=>{
-    if(rowRand(row, side*17+1) < 0.5) return;                 // not every lane
-    const n=1+Math.floor(rowRand(row, side*23+2)*2);          // 1-2 per shoulder
-    const used=[];
-    for(let i=0;i<n;i++){
-      const col = SIDE_MIN + Math.floor(rowRand(row, side*31+i*7)*(SIDE_MAX-SIDE_MIN+1));
-      if(used.includes(col)) continue; used.push(col);
-      const make = SIDE_DECOR[Math.floor(rowRand(row, side*41+i*5)*SIDE_DECOR.length)];
-      const d = make(); d.position.set(side*col, 0, (rowRand(row,side*7+i)-0.5)*0.4);
-      d.rotation.y = side<0 ? 0.35 : -0.35;
+    for(let col=SIDE_MIN+1; col<=SIDE_MAX; col++){
+      const r=rowRand(row, side*97+col*13);
+      if(r>=0.62) continue;                                   // some gaps
+      let d;
+      if(r<0.34) d=decoHanokRoof();
+      else if(r<0.46) d=decoPine();
+      else if(r<0.52) d=decoPagoda();
+      else if(r<0.58) d=decoLantern();
+      else d=decoWell();
+      d.position.set(side*col, 0, (rowRand(row,col*5)-0.5)*0.5);
+      d.rotation.y = side<0 ? Math.PI*0.14 : -Math.PI*0.14;
       g.add(d);
     }
   });
@@ -630,10 +657,10 @@ function updateWillo(){
 let lanes={}; let feverActive=false;
 function rowRand(row,salt){ let x=Math.sin(row*127.1+(salt||0)*311.7)*43758.5453; return x-Math.floor(x); }
 function laneColor(type,row){
-  if(type==='grass') return (row%2===0)?0x86cf9a:0x77c48c;
-  if(type==='road')  return (row%2===0)?0xc7a9ba:0xba9caf;
-  if(type==='water') return 0x74b8ec;
-  return 0x86cf9a;
+  if(type==='grass') return (row%2===0)?0x9edd93:0x8fd384;   // soft warm green
+  if(type==='road')  return (row%2===0)?0xf0dcbe:0xe7d0ad;   // warm sandy path (3D_map tone)
+  if(type==='water') return 0x8fcdf0;                        // pale pastel stream
+  return 0x9edd93;
 }
 function makeLane(row){
   const g=new THREE.Group(); g.position.z=-row*TILE;
@@ -675,8 +702,9 @@ function makeLane(row){
       }
     }
   }
-  // Roadside 3D-voxel decoration on the shoulders of grass lanes (outside play area)
-  if(type==='grass'){ sprinkleSideDecor(g,row); }
+  // Roadside 3D-voxel village on the shoulders (outside play area). Wall lines every
+  // lane for an unbroken stone edge; grass lanes also get packed Hanok/pagoda/pine.
+  if(type!=='gate'){ laneWall(g,row); if(type==='grass') sprinkleSideDecor(g,row); }
   // ROAD: ONLY moving obstacles (palanquin/guard). Max 2, spaced >=6 grid units. No statics.
   if(type==='road'){
     const dir=(rowRand(row,5)<0.5)?1:-1; lane.dir=dir; lane.speed=1.0+rowRand(row,9)*1.2;  // 느린 기본속도 (speedMul로 가속)
@@ -687,23 +715,39 @@ function makeLane(row){
       if(dir<0){ if(mob.userData.bb) mob.userData.bb.scale.x=-1; else mob.rotation.y=Math.PI; }
       g.add(mob); lane.mobs.push({ model:mob, kind:isPal?'palanquin':'guard', w:isPal?1.5:0.8, dead:false }); }
   }
-  // WATER: divine turtles (rideable stepping stones), evenly spaced, nestled in the channel
+  // WATER: divine turtles (rideable stepping stones) + optional wooden bridge (safe crossing)
   if(type==='water'){
     const dir=(rowRand(row,7)<0.5)?1:-1; lane.dir=dir; lane.speed=1.0+rowRand(row,3)*0.8;
+    // fixed-chance wooden bridge spanning 3 columns (safe walk-across, like 3D_map.png)
+    if(rowRand(row,21)<0.45){
+      const c=COL_MIN+2+Math.floor(rowRand(row,22)*(COL_MAX-COL_MIN-3));
+      lane.bridge=[c-1,c,c+1]; buildBridge(g,c);
+    }
     const count=4+Math.floor(rowRand(row,4)*2); const gap=(2*RENDER_HALF+2)/count;
     for(let i=0;i<count;i++){ const t=buildTurtle(); t.position.set(-RENDER_HALF-1+i*gap+rowRand(row,i*5)*1.0,-0.1,0);
       if(dir<0 && t.userData.bb) t.userData.bb.scale.x=-1; g.add(t);
       lane.mobs.push({ model:t, kind:'turtle', w:1.3, dead:false }); }
   }
-  // item balancer
-  if(row>ITEM_SAFE_ROWS && type!=='water' && type!=='gate'){
+  // item balancer (grass/road on open cells; water only on the safe bridge)
+  if(row>ITEM_SAFE_ROWS && type!=='gate'){
     const rnd=s=>(currentGameMode==='timeattack')?rowRand(row,s):Math.random();
-    const chance=Math.max(0.3,0.55-(row-ITEM_SAFE_ROWS)*0.0006);
-    if(rnd(101)<chance){ const cols=[]; for(let x=COL_MIN;x<=COL_MAX;x++){ if(!lane.statics[x]&&!lane.items[x]) cols.push(x); }
-      if(cols.length){ const x=cols[(rnd(202)*cols.length)|0]; const r=rnd(303);
-        const kind=r<0.68?'tteok':r<0.88?'chili':'giant'; lane.items[x]=spawnItem(g,x,kind); } }
+    const pick=()=>{ const r=rnd(303); return r<0.68?'tteok':r<0.88?'chili':'giant'; };
+    if(type==='water'){
+      if(lane.bridge && rnd(101)<0.6){ const x=lane.bridge[1]; lane.items[x]=spawnItem(g,x,pick()); }
+    } else {
+      const chance=Math.max(0.3,0.55-(row-ITEM_SAFE_ROWS)*0.0006);
+      if(rnd(101)<chance){ const cols=[]; for(let x=COL_MIN;x<=COL_MAX;x++){ if(!lane.statics[x]&&!lane.items[x]) cols.push(x); }
+        if(cols.length){ const x=cols[(rnd(202)*cols.length)|0]; lane.items[x]=spawnItem(g,x,pick()); } }
+    }
   }
   scene.add(g); return lane;
+}
+// wooden bridge deck (3 columns wide) with rails — safe crossing over a river lane
+function buildBridge(g,c){
+  const deck=box(3.1,0.16,1.18,0xcaa06a); deck.position.set(c,0.02,0); deck.receiveShadow=true; g.add(deck);
+  const plank=box(3.1,0.05,1.18,0xb98a5a); plank.position.set(c,0.11,0); g.add(plank);
+  for(const rx of [-1.45,1.45]){ const rail=box(0.1,0.34,1.18,0x9a6a3c); rail.position.set(c+rx,0.34,0); g.add(rail);
+    for(const rz of [-0.5,0.5]){ const post=box(0.16,0.55,0.16,0x8a5a2b); post.position.set(c+rx,0.27,rz); g.add(post); } }
 }
 function spawnItem(parent,x,kind){
   const fb = kind==='tteok' ? g=>{ const b=box(0.42,0.42,0.42,0xfff2f6,{emissive:0x553344}); b.position.y=0.62; g.add(b); const s=box(0.44,0.1,0.44,0xff9aa2); s.position.y=0.62; g.add(s); }
@@ -714,12 +758,12 @@ function spawnItem(parent,x,kind){
 }
 
 /* -------------------- Player + ghost rigs -------------------- */
-let player=null, ghostModel=null, shadowBlob=null;
+let player=null, shadowBlob=null;
 const P={ gridX:0,row:0,worldX:0,worldZ:0, jumping:false,jT:0,jDur:0.14, fromX:0,fromZ:0,toX:0,toZ:0,
   ridingTurtle:null, alive:true, facing:1, hop:0 };
-function makeRig(ghost){ const g=new THREE.Group(); g.userData={}; rebuildCharacterVisual(g,ghost); return g; }
+function makeRig(){ const g=new THREE.Group(); g.userData={}; rebuildCharacterVisual(g); return g; }
 function resetPlayer(){
-  if(player) scene.remove(player); player=makeRig(false); scene.add(player);
+  if(player) scene.remove(player); player=makeRig(); scene.add(player);
   if(!shadowBlob){ shadowBlob=new THREE.Mesh(GEO.circle, new THREE.MeshBasicMaterial({ color:0x3a2f4a, transparent:true, opacity:0.28, depthWrite:false }));
     shadowBlob.rotation.x=-Math.PI/2; scene.add(shadowBlob); }
   shadowBlob.visible=true;
@@ -729,18 +773,21 @@ function resetPlayer(){
 
 /* -------------------- Run vars -------------------- */
 const run={ score:0,maxRow:0,fever:0,feverTimer:0,giantTimer:0,chiliTimer:0,stealthTimer:0,stealthCd:0,idleTimer:0,
-  autoScrollRow:0,camRow:0,camX:0,elapsed:0,taTimeLeft:TA_TIME,finished:false,path:[],
-  ghostPath:null,ghostIndex:0,ghostRow:0,ghostFinalRow:0,ghostDone:false,eagle:null };
+  autoScrollRow:0,camRow:0,camX:0,elapsed:0,taTimeLeft:TA_TIME,finished:false,startGrace:0,eagle:null };
 const SKILL_CD=15, STEALTH_DUR=2, FEVER_DUR=5, GIANT_DUR=4, CHILI_DUR=3;
 
 /* -------------------- Movement -------------------- */
-function canEnter(row,x){ if(x<COL_MIN||x>COL_MAX) return false; const lane=lanes[row]; if(!lane) return true;
+function canEnter(row,x){
+  if(row<0) return false;                       // never step back past the start row
+  if(x<COL_MIN||x>COL_MAX) return false;
+  const lane=lanes[row]; if(!lane) return true;
   if(run.stealthTimer>0) return true; const st=lane.statics[x];
   if(st&&st.solid){ if(run.giantTimer>0){ smashStatic(lane,x); return true; } return false; } return true; }
 function smashStatic(lane,x){ const st=lane.statics[x]; if(!st) return; burstSparkle(x,-lane.row*TILE,0xd3b8f0,10); lane.group.remove(st.group); delete lane.statics[x]; sfx.smash(); }
 function tryMove(dx,drow){
   if(!P.alive||gameState!==State.PLAYING||P.jumping||isPaused) return;
   const targetRow=P.row+drow; const baseX=P.ridingTurtle?Math.round(P.worldX):P.gridX; const targetX=baseX+dx;
+  if(targetRow<0) return;                        // block jumping backward below row 0
   if(!canEnter(targetRow,targetX)) return;
   P.ridingTurtle=null; P.fromX=P.worldX; P.fromZ=P.worldZ; P.toX=targetX; P.toZ=-targetRow*TILE;
   P.gridX=targetX; P.row=targetRow; P.jumping=true; P.jT=0; P.jDur=0.14/(run.chiliTimer>0?1.5:1);
@@ -749,12 +796,14 @@ function tryMove(dx,drow){
   sfx.jump(); run.idleTimer=0;
 }
 function finishJump(){ P.jumping=false; P.worldX=P.toX; P.worldZ=P.toZ; P.hop=0;
-  if(P.row>run.maxRow) run.maxRow=P.row; recordPath(); resolveLanding(); }
+  if(P.row>run.maxRow) run.maxRow=P.row; resolveLanding(); }
 function resolveLanding(){
   const lane=lanes[P.row]; if(!lane) return;
   const it=lane.items[P.gridX]; if(it&&!it.taken) collectItem(lane,it,P.gridX);
-  if(lane.type==='water'){ let onT=null; for(const m of lane.mobs){ if(m.kind==='turtle'&&Math.abs(m.model.position.x-P.worldX)<(m.w/2+0.35)){ onT=m; break; } }
-    if(onT) P.ridingTurtle=onT; else if(run.stealthTimer<=0&&!feverActive) die('drown'); }
+  if(lane.type==='water'){
+    if(lane.bridge && lane.bridge.includes(P.gridX)){ /* standing safely on the wooden bridge */ }
+    else { let onT=null; for(const m of lane.mobs){ if(m.kind==='turtle'&&Math.abs(m.model.position.x-P.worldX)<(m.w/2+0.35)){ onT=m; break; } }
+      if(onT) P.ridingTurtle=onT; else if(run.stealthTimer<=0&&!feverActive) die('drown'); } }
   if(lane.type==='road') checkVehicleCollision(lane);
   if(currentGameMode==='timeattack'&&P.row>=TA_GOAL&&!run.finished) timeAttackWin();
 }
@@ -768,26 +817,14 @@ function addFever(a){ if(feverActive) return; run.fever=Math.min(100,run.fever+a
 function startFever(){ feverActive=true; run.feverTimer=FEVER_DUR; run.fever=100; document.getElementById('fever-wrap').classList.add('on'); sfx.fever(); showToast('피버 모드! 무적!'); }
 function endFever(){ feverActive=false; run.fever=0; run.feverTimer=0; document.getElementById('fever-wrap').classList.remove('on'); }
 function useSkill(){ if(gameState!==State.PLAYING||!P.alive||run.stealthCd>0||isPaused) return; run.stealthTimer=STEALTH_DUR; run.stealthCd=SKILL_CD; sfx.skill(); showToast('은신!'); }
-function checkVehicleCollision(lane){ if(!P.alive||run.stealthTimer>0||feverActive) return;
+function checkVehicleCollision(lane){ if(!P.alive||run.stealthTimer>0||feverActive||run.startGrace>0) return;
   for(const m of lane.mobs){ if(m.dead||m.kind==='turtle') continue;
     if(Math.abs(m.model.position.x-P.worldX)<(m.w/2+0.35)){ if(run.giantTimer>0){ m.dead=true; lane.group.remove(m.model); burstSparkle(m.model.position.x,-lane.row*TILE,0xff9aa2,14); sfx.smash(); } else die('crash'); return; } } }
 function die(reason){ if(!P.alive||run.finished) return; P.alive=false; sfx.crash(); if(reason==='eagle') spawnEagle();
   setTimeout(()=>endRun(false,reason), reason==='eagle'?700:450); }
 function spawnEagle(){ const g=buildEagle(); g.position.set(P.worldX,8,P.worldZ); scene.add(g); run.eagle={ model:g, t:0 }; }
-
-/* -------------------- Ghost replay -------------------- */
-function recordPath(){ if(currentGameMode==='infinite'||currentGameMode==='ghost') run.path.push({ time:+run.elapsed.toFixed(3), x:P.gridX, y:P.row }); }
-function saveGhostIfRecord(){ if(currentGameMode!=='infinite') return false;
-  if(run.score>store.highScore){ store.highScore=run.score; LS.set('infinite_highscore',store.highScore); LS.set('ghost_replay_path',run.path); return true; } return false; }
-function loadGhost(){ const path=LS.get('ghost_replay_path',null); if(!path||path.length<2){ run.ghostPath=null; return; }
-  run.ghostPath=path; run.ghostFinalRow=path[path.length-1].y; run.ghostIndex=0;
-  ghostModel=makeRig(true); scene.add(ghostModel); ghostModel.position.set(0,0,0); }
-function updateGhost(){ if(!run.ghostPath||!ghostModel) return; const path=run.ghostPath, t=run.elapsed;
-  if(t>=path[path.length-1].time){ const L=path[path.length-1]; ghostModel.position.set(L.x,0.1,-L.y*TILE); run.ghostRow=L.y; run.ghostDone=true; billboardFace(ghostModel); return; }
-  let i=run.ghostIndex; while(i<path.length-1&&path[i+1].time<=t) i++; run.ghostIndex=i;
-  const a=path[i], b=path[i+1]; const span=Math.max(0.0001,b.time-a.time); const k=Math.min(1,(t-a.time)/span);
-  const gx=a.x+(b.x-a.x)*k, gr=a.y+(b.y-a.y)*k, hop=Math.sin(Math.min(1,k)*Math.PI)*0.5;
-  ghostModel.position.set(gx,0.1+hop,-gr*TILE); run.ghostRow=gr; billboardFace(ghostModel); }
+// infinite high-score (no ghost replay stored anymore)
+function saveHighScore(){ if(currentGameMode==='infinite' && run.score>store.highScore){ store.highScore=run.score; LS.set('infinite_highscore',store.highScore); return true; } return false; }
 
 /* -------------------- World update -------------------- */
 function ensureLanes(){ const from=Math.floor(run.camRow)-8; let to=Math.floor(P.row)+22;
@@ -845,22 +882,20 @@ function updatePlayerAnim(dt){
     spawnParticle(P.worldX+Math.cos(a)*0.4,0.9+Math.random()*0.6,P.worldZ+Math.sin(a)*0.4,new THREE.Color().setHSL(Math.random(),0.7,0.7).getHex(),{vy:1.2,grav:1,life:0.5,size:0.13,emissive:0xffddaa}); }
 }
 function updateCamera(dt){
-  if(currentGameMode==='infinite'||currentGameMode==='ghost') run.autoScrollRow+=0.75*gameSpeedMul()*dt;
+  if(currentGameMode==='infinite') run.autoScrollRow+=0.75*gameSpeedMul()*dt;
   let targetRow=Math.max(P.row, run.autoScrollRow); if(currentGameMode==='timeattack') targetRow=P.row;
   run.camRow+=(targetRow-run.camRow)*Math.min(1,dt*4);
   run.camX+=(P.worldX*0.5-run.camX)*Math.min(1,dt*4);
   const cz=-run.camRow*TILE, cx=run.camX;
-  camera.position.set(cx+CAM_OFF,CAM_OFF,cz+CAM_OFF); camera.lookAt(cx,0,cz);
+  camera.position.set(cx+CAM.x,CAM.y,cz+CAM.z); camera.lookAt(cx,0,cz);
   keyLight.position.set(cx+30,55,cz+18); keyLight.target.position.set(cx,0,cz);
 }
 function checkLose(dt){ if(!P.alive||run.finished) return;
-  if(currentGameMode==='infinite'||currentGameMode==='ghost'){ run.idleTimer+=dt; if(run.idleTimer>5){ die('eagle'); return; }
-    if(P.row<run.autoScrollRow-6){ die('eagle'); return; } }
-  if(currentGameMode==='ghost'&&run.ghostPath){ if(P.row>run.ghostFinalRow){ ghostRaceWin(); return; } if(run.ghostRow-P.row>8){ die('ghost_far'); return; } } }
+  if(currentGameMode==='infinite'){ run.idleTimer+=dt; if(run.idleTimer>5){ die('eagle'); return; }
+    if(P.row<run.autoScrollRow-6){ die('eagle'); return; } } }
 function timeAttackWin(){ run.finished=true; const left=run.taTimeLeft; let g='C';
   if(left>=15)g='SSS'; else if(left>=10)g='SS'; else if(left>=5)g='A'; else if(left>=2)g='B';
   sfx.win(); setTimeout(()=>endRun(true,'ta_clear',{grade:g,left}),400); }
-function ghostRaceWin(){ run.finished=true; sfx.win(); setTimeout(()=>endRun(true,'ghost_win'),400); }
 function updateTimers(dt){ if(run.stealthCd>0)run.stealthCd=Math.max(0,run.stealthCd-dt); if(run.stealthTimer>0)run.stealthTimer=Math.max(0,run.stealthTimer-dt);
   if(run.chiliTimer>0)run.chiliTimer=Math.max(0,run.chiliTimer-dt); if(run.giantTimer>0)run.giantTimer=Math.max(0,run.giantTimer-dt);
   if(feverActive){ run.feverTimer-=dt; if(run.feverTimer<=0) endFever(); }
@@ -880,8 +915,8 @@ function resumeGame(){ if(!isPaused) return; isPaused=false; el('pause').classLi
 let clock;
 function animate(){ requestAnimationFrame(animate); const dt=Math.min(0.05, clock.getDelta());
   // When paused: freeze all updates (character, camera, mobs, timers) but keep rendering the frozen frame.
-  if(gameState===State.PLAYING && !isPaused){ run.elapsed+=dt; ensureLanes(); updateTimers(dt); updateMobs(dt);
-    if(!P.jumping) updateRiding(); updatePlayerAnim(dt); updateWillo(); if(currentGameMode==='ghost') updateGhost();
+  if(gameState===State.PLAYING && !isPaused){ run.elapsed+=dt; if(run.startGrace>0) run.startGrace-=dt; ensureLanes(); updateTimers(dt); updateMobs(dt);
+    if(!P.jumping) updateRiding(); updatePlayerAnim(dt); updateWillo();
     updateDecor(dt); checkLose(dt); updateCamera(dt); updateEagle(dt); updateBillboards(); run.score=run.maxRow; updateHUD(); }
   if(!isPaused) updateBackdrop(dt);
   if(!isPaused) updateParticles(dt);
@@ -894,31 +929,28 @@ function updateHUD(){ el('hud-score').textContent=run.score; el('hud-tteok').tex
   el('fever-fill').style.width=(feverActive?100:run.fever)+'%';
   const sb=el('skill-btn'), cd=el('skill-cd');
   if(run.stealthCd>0){ sb.classList.add('cool'); cd.textContent=Math.ceil(run.stealthCd)+'초'; } else { sb.classList.remove('cool'); cd.textContent='준비'; }
-  if(currentGameMode==='timeattack'){ const tb=el('timer-box'); tb.classList.remove('hidden'); el('hud-time').textContent=Math.ceil(run.taTimeLeft); tb.classList.toggle('warn',run.taTimeLeft<=10); }
-  if(currentGameMode==='ghost'&&run.ghostPath){ el('ghost-box').classList.remove('hidden'); el('hud-ghost').textContent=Math.round(run.ghostRow-P.row); } }
+  if(currentGameMode==='timeattack'){ const tb=el('timer-box'); tb.classList.remove('hidden'); el('hud-time').textContent=Math.ceil(run.taTimeLeft); tb.classList.toggle('warn',run.taTimeLeft<=10); } }
 let toastTimer=null; function showToast(m){ const t=el('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('show'),1100); }
 
 /* -------------------- Start / end -------------------- */
 function clearWorld(){ for(const k in lanes){ scene.remove(lanes[k].group); } lanes={};
   for(const p of particles){ scene.remove(p.mesh); } particles.length=0;
-  if(ghostModel){ scene.remove(ghostModel); ghostModel=null; } if(run.eagle){ scene.remove(run.eagle.model); run.eagle=null; } }
+  if(run.eagle){ scene.remove(run.eagle.model); run.eagle=null; } }
 function startRun(mode){ currentGameMode=mode; sfx.init(); clearWorld();
   Object.assign(run,{ score:0,maxRow:0,fever:0,feverTimer:0,giantTimer:0,chiliTimer:0,stealthTimer:0,stealthCd:0,idleTimer:0,
-    autoScrollRow:0,camRow:0,camX:0,elapsed:0,taTimeLeft:TA_TIME,finished:false,path:[],ghostPath:null,ghostIndex:0,ghostRow:0,ghostFinalRow:0,ghostDone:false,eagle:null });
+    autoScrollRow:0,camRow:0,camX:0,elapsed:0,taTimeLeft:TA_TIME,finished:false,startGrace:0.8,eagle:null });
   feverActive=false; document.getElementById('fever-wrap').classList.remove('on');
-  resetPlayer(); initWillo(); ensureLanes(); if(mode==='ghost') loadGhost();
-  el('timer-box').classList.toggle('hidden',mode!=='timeattack'); el('ghost-box').classList.add('hidden');
+  resetPlayer(); initWillo(); ensureLanes();
+  el('timer-box').classList.toggle('hidden',mode!=='timeattack');
   isPaused=false; el('pause').classList.add('hidden');
-  if(mode==='ghost'&&!run.ghostPath) showToast('저장된 고스트가 없어 자유 주행합니다');
-  recordPath(); gameState=State.PLAYING; showScreen('hud'); updateHUD();
+  gameState=State.PLAYING; showScreen('hud'); updateHUD();
 }
 function endRun(win,reason,extra){ if(gameState===State.RESULT) return; gameState=State.RESULT; saveStore();
   const head=el('res-headline'), rankBox=el('res-rank'), stats=el('res-stats'); rankBox.classList.add('hidden'); head.classList.remove('win','lose');
   let s=`점수(최고 칸): <b>${run.score}</b><br/>획득한 떡: <b>${store.tteok}</b>개`;
   if(win&&reason==='ta_clear'){ head.textContent='미션 성공!'; head.classList.add('win'); rankBox.classList.remove('hidden'); rankBox.innerHTML=`최종 등급: <span class="grade">${extra.grade}</span>`; s=`남은 시간: <b>${extra.left.toFixed(1)}</b>초<br/>`+s; }
-  else if(win&&reason==='ghost_win'){ head.textContent='신기록 달성!'; head.classList.add('win'); rankBox.classList.remove('hidden'); rankBox.innerHTML=`<span style="font-size:20px;color:var(--mint-d)">고스트를 이겼습니다!</span>`; }
   else { head.classList.add('lose'); head.textContent=currentGameMode==='timeattack'?'미션 실패':'게임 오버';
-    const rec=saveGhostIfRecord(); if(rec) s+=`<br/><span style="color:var(--mint-d)">🎉 새로운 최고 기록! 고스트 저장됨</span>`; else if(currentGameMode==='infinite') s+=`<br/>최고 기록: <b>${store.highScore}</b>칸`; sfx.lose(); }
+    const rec=saveHighScore(); if(rec) s+=`<br/><span style="color:var(--mint-d)">🎉 새로운 최고 기록!</span>`; else if(currentGameMode==='infinite') s+=`<br/>최고 기록: <b>${store.highScore}</b>칸`; sfx.lose(); }
   stats.innerHTML=s; saveStore(); setTimeout(()=>showScreen('result'),60);
 }
 function showScreen(which){ ['menu','hud','gacha','result'].forEach(id=>el(id).classList.toggle('hidden',id!==which)); if(which==='menu') el('menu-tteok').textContent=store.tteok; }
