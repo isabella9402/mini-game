@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>K-판타지: 꼬마 도깨비의 모험</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<!-- GLTFLoader matching three r128 (classic build -> attaches THREE.GLTFLoader) for the Isometric Voxel Art models -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <style>
   :root{
     --peach:#ffb7b2; --peach-d:#ff8f88; --mint:#b5ead7; --mint-d:#7fcbb0;
@@ -196,6 +198,7 @@
 const GITHUB_CONFIG = {
   baseUrl:   "https://raw.githubusercontent.com/isabella9402/mini-game/main/resources/",
   baseUrl3D: "https://raw.githubusercontent.com/isabella9402/mini-game/main/3D_resources/",
+  baseUrlVox: "https://raw.githubusercontent.com/isabella9402/mini-game/main/voxel_models/",  // Isometric Voxel Art glTF models
   characterDefault: "3D_main character.png",   // 3D 한복 삼색 고양이 (3D_resources)
 };
 
@@ -369,6 +372,7 @@ function box(w,h,d,color,opts){ const m=new THREE.Mesh(GEO.box, mat(color,opts))
    CHARACTER (billboard from GitHub, with pastel-box fallback)
    ========================================================================= */
 let charTexture=null, charAspect=0.7, charReady=false;      // main character (고양이)
+let charModelReady=false;                                    // 3D voxel character model (takes priority over billboard)
 const CHAR_W=1.0;          // 캐릭터: 1칸에 딱 맞게 (height는 aspect로 계산)
 const LANE_TOP=0;          // top surface Y of a lane box (box centred at -0.25, height 0.5)
 // ---- Strict visual size hierarchy (fixed WIDTHS in grid units) ----
@@ -427,7 +431,17 @@ function rebuildCharacterVisual(rig){
   if(!rig) return;
   if(rig.userData.visual){ rig.remove(rig.userData.visual); }
   let vis;
-  if(charReady && charTexture){
+  if(charModelReady && VOX.char && VOX.char[0]){
+    // 3D Isometric Voxel Art character (takes priority). Base pinned to lane top.
+    const inst=voxInstance('char',0);
+    const bb=new THREE.Box3().setFromObject(inst); const sz=new THREE.Vector3(); bb.getSize(sz);
+    const H=1.5, s=H/(sz.y||1); inst.scale.setScalar(s);
+    const bb2=new THREE.Box3().setFromObject(inst); inst.position.y-=bb2.min.y;   // feet on ground
+    vis=new THREE.Group(); vis.add(inst); vis.position.y=LANE_TOP;
+    vis.userData.model=true; vis.userData.baseH=H; vis.userData.mats=[];
+    inst.traverse(o=>{ if(o.isMesh) vis.userData.mats.push(o.material); });
+    setTimeout(()=>setCharTint(currentSkin().tint),0);
+  } else if(charReady && charTexture){
     const w=CHAR_W, h=w/charAspect;                   // keep aspect, derive height
     const m=new THREE.MeshBasicMaterial({ map:charTexture, transparent:true, alphaTest:0.35, side:THREE.DoubleSide,
       depthWrite:true, color: currentSkin().tint, opacity:1 });
@@ -517,15 +531,88 @@ function vxEagle(g){ const body=box(1,0.6,1.4,0xb79a86); g.add(body);
   const wr=box(1.6,0.15,1,0xcbb6a2); wr.position.set(1.2,0,0); g.add(wr);
   g.userData.wl=wl; g.userData.wr=wr; }
 
-/* -------------------- Public builders (image billboard + fallback) --------------------
-   First arg is a FIXED WIDTH (grid units); height = width / aspect (never squished). */
-function buildTree(){ return makeBillboard('tree',SIZE.tree,{fallback:vxTree}); }
-function buildRock(){ return makeBillboard('rock',SIZE.rock,{fallback:vxRock}); }
-function buildPalanquin(){ return makeBillboard('palanquin',SIZE.palanquin,{fallback:vxPalanquin}); }
-function buildGuard(){ return makeBillboard('guard',SIZE.guard,{maxH:1.35,fallback:vxGuard}); }  // chibi: only a bit taller than the cat
-function buildTurtle(){ return makeBillboard('turtle',SIZE.turtle,{fallback:vxTurtle}); }
-function buildGate(){ return makeBillboard('gate',SIZE.gate,{noShadow:true,fallback:vxGate}); }
-function buildEagle(){ return makeBillboard('eagle',SIZE.eagle,{noShadow:true,fallback:vxEagle}); }
+/* =========================================================================
+   ISOMETRIC VOXEL ART 3D MODELS (glTF .glb) — preferred over billboards.
+   Each entity builder tries a real 3D voxel model first and transparently
+   falls back to the existing image billboard / voxel geometry if the model
+   isn't loaded (offline, on a branch not yet merged, or GLTFLoader missing).
+   ========================================================================= */
+// use local relative files when self-hosted/opened locally; github raw in production
+const VOX_BASE = (location.hostname==='localhost'||location.hostname==='127.0.0.1'||location.protocol==='file:')
+  ? 'voxel_models/' : GITHUB_CONFIG.baseUrlVox;
+const VOX_FILES = {
+  char:      ['char_dokkaebi.glb'],
+  tree:      ['tree_pine.glb','tree_round.glb'],
+  rock:      ['rock.glb'],
+  palanquin: ['palanquin.glb'],
+  guard:     ['guard.glb'],
+  turtle:    ['turtle.glb'],
+  eagle:     ['eagle.glb'],
+  ghost:     ['ghost.glb'],
+  tteok:     ['item_sotteok.glb','item_bungeoppang.glb'],
+  chili:     ['item_chili.glb'],
+  giant:     ['item_charm.glb'],
+};
+// fit each model into the game's size hierarchy (h = target height, w = target width, grid units)
+const VOX_FIT = {
+  tree:{h:2.4}, rock:{h:0.8}, palanquin:{w:1.8}, guard:{h:1.55}, turtle:{w:1.5,ry:Math.PI/2},
+  eagle:{w:2.4}, ghost:{h:1.4}, tteok:{h:0.8}, chili:{h:0.75}, giant:{h:0.85},
+};
+const VOX = {};        // key -> [THREE.Object3D scene, ...] (variants; may have holes until loaded)
+let voxLoader=null;
+function loadVoxelModels(){
+  if(typeof THREE.GLTFLoader!=='function') return;   // loader script unavailable -> keep billboards
+  voxLoader=new THREE.GLTFLoader();
+  for(const key in VOX_FILES){ VOX[key]=[];
+    VOX_FILES[key].forEach((file,vi)=>{
+      voxLoader.load(VOX_BASE+file, gltf=>{
+        const root=gltf.scene;
+        root.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true; } });
+        VOX[key][vi]=root;
+        if(key==='char'){ charModelReady=true; rebuildCharacterVisual(player); }
+      }, undefined, ()=>{ /* load failed -> silent; fallbacks remain */ });
+    });
+  }
+}
+// clone a loaded model (materials cloned so per-instance tint/opacity stays local)
+function voxInstance(key, variant){
+  const arr=VOX[key]; if(!arr) return null;
+  let src;
+  if(variant!=null) src=arr[variant%arr.length];
+  else { const avail=arr.filter(Boolean); if(!avail.length) return null; src=avail[(Math.random()*avail.length)|0]; }
+  if(!src) return null;
+  const obj=src.clone(true);
+  obj.traverse(o=>{ if(o.isMesh){ o.material=o.material.clone(); o.castShadow=true; o.receiveShadow=true; } });
+  return obj;
+}
+// build a 3D entity group compatible with the billboard pipeline (returns null if model absent)
+function buildVox(key){
+  if(!VOX[key]) return null;
+  const inst=voxInstance(key);
+  if(!inst) return null;
+  const fit=VOX_FIT[key]||{};
+  if(fit.ry) inst.rotation.y=fit.ry;
+  const bb=new THREE.Box3().setFromObject(inst); const sz=new THREE.Vector3(); bb.getSize(sz);
+  let s=1;
+  if(fit.h) s=fit.h/(sz.y||1); else if(fit.w) s=fit.w/(sz.x||1);
+  inst.scale.setScalar(s);
+  const bb2=new THREE.Box3().setFromObject(inst); inst.position.y-=bb2.min.y;   // base on lane surface
+  const g=new THREE.Group(); g.add(inst); g.userData.model=true; g.userData.vox=inst;
+  return g;
+}
+// apply a colour tint (skin) across a billboard OR a voxel-model character
+function setCharTint(hex){ const vis=player&&player.userData.visual; if(!vis) return;
+  if(vis.userData.mats){ for(const mm of vis.userData.mats) mm.color.setHex(hex); }
+  else if(vis.material){ vis.material.color.setHex(hex); } }
+
+/* -------------------- Public builders (3D voxel model -> billboard -> voxel fallback) -------------------- */
+function buildTree(){ return buildVox('tree') || makeBillboard('tree',SIZE.tree,{fallback:vxTree}); }
+function buildRock(){ return buildVox('rock') || makeBillboard('rock',SIZE.rock,{fallback:vxRock}); }
+function buildPalanquin(){ return buildVox('palanquin') || makeBillboard('palanquin',SIZE.palanquin,{fallback:vxPalanquin}); }
+function buildGuard(){ return buildVox('guard') || makeBillboard('guard',SIZE.guard,{maxH:1.35,fallback:vxGuard}); }
+function buildTurtle(){ return buildVox('turtle') || makeBillboard('turtle',SIZE.turtle,{fallback:vxTurtle}); }
+function buildGate(){ return makeBillboard('gate',SIZE.gate,{noShadow:true,fallback:vxGate}); }   // no voxel model -> billboard/voxel gate
+function buildEagle(){ return buildVox('eagle') || makeBillboard('eagle',SIZE.eagle,{noShadow:true,fallback:vxEagle}); }
 
 /* -------------------- Roadside 3D voxel decorations (Joseon flavour) -------------------- */
 // Hanok with layered JADE (xanh ngọc bích) tiled roof — matches 3D_map.png
@@ -753,7 +840,7 @@ function spawnItem(parent,x,kind){
   const fb = kind==='tteok' ? g=>{ const b=box(0.42,0.42,0.42,0xfff2f6,{emissive:0x553344}); b.position.y=0.62; g.add(b); const s=box(0.44,0.1,0.44,0xff9aa2); s.position.y=0.62; g.add(s); }
     : kind==='chili' ? g=>{ const b=box(0.22,0.55,0.22,0xe5484d,{emissive:0x551111}); b.position.y=0.6; g.add(b); const st=box(0.12,0.16,0.12,0x5fae74); st.position.set(-0.08,0.86,0); g.add(st); }
     : g=>{ const b=box(0.5,0.5,0.15,0xffd36e,{emissive:0x554400}); b.position.y=0.65; g.add(b); };
-  const grp=makeBillboard(kind, SIZE.item, { noShadow:true, fallback:fb });
+  const grp=buildVox(kind) || makeBillboard(kind, SIZE.item, { noShadow:true, fallback:fb });
   grp.position.set(x,0,0); parent.add(grp); return { kind, group:grp, taken:false };   // centred on the grid cell
 }
 
@@ -872,8 +959,14 @@ function updatePlayerAnim(dt){
   if(vis){ const sc=1+Math.sin(Math.max(0,P.hop)/0.6*Math.PI)*0.12;
     vis.scale.set((P.facing<0?-1:1)*giant/Math.sqrt(sc), giant*sc, giant);
     if(vis.userData.billboard) vis.quaternion.copy(camera.quaternion);
-    if(vis.material){ vis.material.opacity=run.stealthTimer>0?0.4:(charReady?1:1); vis.material.transparent=vis.material.opacity<1||charReady;
-      if(charReady) vis.material.color.setHex(feverActive&&(Math.floor(run.elapsed*12)&1)?0xffe37a:currentSkin().tint); }
+    const tintHex=feverActive&&(Math.floor(run.elapsed*12)&1)?0xffe37a:currentSkin().tint;
+    const op=run.stealthTimer>0?0.4:1;
+    if(vis.userData.mats){                    // 3D voxel model character
+      for(const mm of vis.userData.mats){ mm.transparent=op<1; mm.opacity=op; mm.color.setHex(tintHex); }
+    } else if(vis.material){                   // billboard character
+      vis.material.opacity=op; vis.material.transparent=op<1||charReady;
+      if(charReady) vis.material.color.setHex(tintHex);
+    }
   }
   // ground shadow blob
   if(shadowBlob){ const k=Math.max(0.4,1-Math.max(0,P.hop)*0.5)*giant; shadowBlob.position.set(P.worldX,0.03,P.worldZ);
@@ -965,7 +1058,7 @@ function renderSkinGrid(){ const grid=el('skin-grid'); grid.innerHTML='';
       (owned?(eq?'<div class="st">장착함</div>':`<button class="pbtn mint eqbtn" data-equip="${s.id}">장착하기</button>`):'<div class="st">보유 중 아님</div>');
     grid.appendChild(card); }
   grid.querySelectorAll('[data-equip]').forEach(b=>b.addEventListener('click',()=>{ store.equipped=b.getAttribute('data-equip'); saveStore(); renderSkinGrid();
-    if(player&&player.userData.visual&&player.userData.visual.material&&charReady) player.userData.visual.material.color.setHex(currentSkin().tint); sfx.pickup(); })); }
+    if(charReady||charModelReady) setCharTint(currentSkin().tint); sfx.pickup(); })); }
 function rollGacha(){ sfx.init(); if(store.tteok<100){ el('gacha-result').innerHTML='<span style="color:var(--peach-d)">떡이 부족합니다!</span>'; return; }
   store.tteok-=100; const r=Math.random(); const rarity=r<0.70?'C':r<0.95?'R':'SSR'; const pool=SKINS.filter(s=>s.rarity===rarity); const pick=pool[Math.floor(Math.random()*pool.length)]; let msg;
   if(store.owned.includes(pick.id)){ store.tteok+=30; msg=`<span class="rr ${rarity}">[${RARITY_LABEL[rarity]}]</span> ${pick.name} (중복! 떡 30개 반환)`; }
@@ -1013,7 +1106,7 @@ function drawMascotFallback(){ const c=document.createElement('canvas'); c.width
   g.fillStyle='#2a2540'; g.fillRect(24,26,6,6); g.fillRect(36,26,6,6); el('mascot').src=c.toDataURL('image/png'); }
 
 /* -------------------- Boot -------------------- */
-function boot(){ initThree(); clock=new THREE.Clock(); bindInput(); drawMascotFallback(); loadCharacter(); loadEnvResources();
+function boot(){ initThree(); clock=new THREE.Clock(); bindInput(); drawMascotFallback(); loadVoxelModels(); loadCharacter(); loadEnvResources();
   showScreen('menu'); el('menu-tteok').textContent=store.tteok;
   const unlock=()=>{ sfx.init(); window.removeEventListener('pointerdown',unlock); }; window.addEventListener('pointerdown',unlock);
   animate();
