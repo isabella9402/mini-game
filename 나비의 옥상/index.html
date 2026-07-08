@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>나비의 옥상</title>
+<!-- Font pixel Hàn Galmuri (không có trên Google Fonts) qua jsDelivr, fallback monospace -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri@latest/dist/galmuri.css" />
+<style>
+  /* Palette THÀNH PHỐ ANIME BAN ĐÊM — neon trên nền chàm sâu (pixel art) */
+  :root{
+    --bg:#07061a; --panel:#160f31; --panel2:#20174a;
+    --ink:#eef0ff; --dim:#9a95c9;
+    --cyan:#5fe6ff; --pink:#ff6ec7; --gold:#ffd36e; --purple:#b98cff; --green:#7dffd0;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  /* Layout khổ NGANG 16:9, letterbox nếu tỷ lệ thiết bị lệch (§I) */
+  html,body{ margin:0; height:100%; background:#05040f; overflow:hidden;
+    font-family:"Galmuri11","Galmuri9","DungGeunMo","Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR",monospace;
+    color:var(--ink); user-select:none; -webkit-user-select:none; }
+  #wrap{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  canvas{ aspect-ratio:16/9; width:100%; max-width:100vw; max-height:100vh; height:auto;
+    image-rendering:pixelated; image-rendering:crisp-edges; touch-action:none; display:block; }
+
+  /* Overlay dùng chung: căn giữa, phủ toàn màn */
+  .overlay{ position:fixed; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; padding:16px; z-index:20; text-align:center; }
+  .hidden{ display:none !important; }
+
+  /* Panel & nút phong cách pixel-neon (bo góc nhỏ, viền cứng + hào quang neon) */
+  .pixel-panel{ background:var(--panel); border:3px solid var(--cyan); border-radius:4px; padding:18px 22px;
+    box-shadow:0 0 0 3px #05040f, 0 0 22px rgba(95,230,255,.30), inset 0 0 0 2px rgba(255,255,255,.05); }
+  .pbtn{ font-family:inherit; font-weight:700; letter-spacing:1px; border:3px solid currentColor;
+    border-radius:3px; padding:12px 20px; cursor:pointer; font-size:17px; background:#0d0a24;
+    box-shadow:0 0 12px rgba(255,255,255,.12), inset 0 0 10px rgba(255,255,255,.05);
+    transition:transform .05s, box-shadow .1s, filter .1s; text-shadow:0 0 8px currentColor; }
+  .pbtn:hover{ filter:brightness(1.25); }
+  .pbtn:active{ transform:translateY(2px); }
+  .pbtn.cyan{ color:var(--cyan); } .pbtn.pink{ color:var(--pink); } .pbtn.gold{ color:var(--gold); }
+
+  /* Ready — trời chàm→hồng anime, ánh neon */
+  #ready{ background:
+      radial-gradient(130% 100% at 78% 8%, rgba(255,110,199,.30), transparent 55%),
+      radial-gradient(120% 90% at 20% 0%, rgba(95,230,255,.22), transparent 55%),
+      linear-gradient(180deg,#0a0824 0%, #241243 42%, #5a1f4e 74%, #b64a5a 100%); }
+  #ready .title{ font-size:clamp(30px,8vw,58px); font-weight:700; color:var(--cyan); margin:0; line-height:1.05;
+    letter-spacing:2px; text-shadow:0 0 10px rgba(95,230,255,.8), 0 0 26px rgba(95,230,255,.5), 3px 3px 0 var(--pink); }
+  #ready .sub{ font-size:clamp(13px,3.2vw,18px); font-weight:700; color:var(--pink); margin:12px 0 6px; text-shadow:0 0 8px rgba(255,110,199,.6); }
+  #ready #mascot{ image-rendering:pixelated; width:96px; height:96px; margin:6px 0; filter:drop-shadow(0 0 10px rgba(255,211,110,.5)); }
+  #ready .tut{ margin-top:16px; font-size:13px; line-height:1.8; color:var(--ink);
+    background:rgba(13,10,36,.72); border:2px solid var(--purple); border-radius:4px; padding:10px 16px; max-width:min(440px,90vw);
+    box-shadow:0 0 16px rgba(185,140,255,.25); }
+  #ready .tut b{ color:var(--gold); }
+  #ready .best{ margin-top:12px; font-weight:700; color:var(--gold); text-shadow:0 0 8px rgba(255,211,110,.5); }
+
+  /* Game Over */
+  #gameover{ background:rgba(6,5,20,.82); backdrop-filter:blur(2px); }
+  #gameover .box{ width:min(420px,92vw); }
+  #gameover .headline{ font-size:36px; font-weight:700; color:var(--pink); margin:0 0 6px; letter-spacing:2px;
+    text-shadow:0 0 12px rgba(255,110,199,.8); }
+  #gameover .newrec{ font-size:18px; font-weight:700; color:var(--gold); margin:4px 0; text-shadow:0 0 10px rgba(255,211,110,.7); }
+  #gameover .stats{ font-size:17px; font-weight:700; line-height:1.8; margin:8px 0; color:var(--ink); }
+  #gameover .rankttl{ font-size:13px; font-weight:700; color:var(--cyan); margin-top:10px; letter-spacing:1px; }
+  #gameover .ranks{ font-size:15px; line-height:1.7; margin:2px 0 12px; color:var(--dim); font-variant-numeric:tabular-nums; }
+  #gameover .ranks .hot{ color:var(--gold); text-shadow:0 0 8px rgba(255,211,110,.6); }
+  #gameover .btns{ display:flex; gap:10px; margin-top:8px; } #gameover .btns .pbtn{ flex:1; font-size:16px; padding:12px 8px; }
+
+  /* Overlay xoay ngang */
+  #rotate{ background:linear-gradient(160deg,#0a0824,#3a1a4e); color:var(--cyan); }
+  #rotate .msg{ font-size:24px; font-weight:700; letter-spacing:2px; text-shadow:0 0 12px rgba(95,230,255,.7); }
+  #rotate .ico{ font-size:52px; margin-bottom:10px; animation:spin 2s ease-in-out infinite; }
+  @keyframes spin{ 0%,100%{transform:rotate(0);} 50%{transform:rotate(90deg);} }
+
+  /* Nút âm thanh */
+  #sound{ position:fixed; top:12px; right:12px; z-index:30; width:44px; height:44px; border-radius:4px;
+    border:2px solid var(--cyan); background:#0d0a24; color:var(--cyan); font-size:20px; cursor:pointer;
+    box-shadow:0 0 12px rgba(95,230,255,.35); }
+  #sound:active{ transform:translateY(2px); }
+
+  /* Toast */
+  .toast{ position:fixed; top:30%; left:50%; transform:translateX(-50%); background:rgba(13,10,36,.95); color:var(--gold);
+    padding:10px 18px; border-radius:4px; font-weight:700; z-index:40; border:2px solid var(--gold);
+    pointer-events:none; opacity:0; transition:opacity .2s; font-size:14px; text-shadow:0 0 8px rgba(255,211,110,.5);
+    box-shadow:0 0 18px rgba(255,211,110,.3); }
+  .toast.show{ opacity:1; }
+  @media (prefers-reduced-motion: reduce){ #rotate .ico{ animation:none; } }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv"></canvas>
+</div>
+
+<button id="sound" aria-label="소리">🔊</button>
+
+<!-- Màn hình bắt đầu -->
+<div id="ready" class="overlay">
+  <h1 class="title">나비의 옥상</h1>
+  <canvas id="mascot" width="56" height="48" aria-label="나비"></canvas>
+  <div class="sub">네온 지붕을 타는 한 손 그네타기</div>
+  <button class="pbtn cyan" id="btn-start">게임 시작</button>
+  <div class="tut">길게 누르면 <b>실 걸기</b> · 떼면 <b>날아가기</b><br>네온 도시의 지붕을 타고 오른쪽으로 날아가세요!</div>
+  <div class="best" id="ready-best">최고: 0m</div>
+</div>
+
+<!-- Màn hình kết thúc -->
+<div id="gameover" class="overlay hidden">
+  <div class="pixel-panel box">
+    <h2 class="headline">게임 오버</h2>
+    <div class="newrec hidden" id="newrec">🎉 신기록 달성!</div>
+    <div class="stats">
+      이번 거리: <span id="go-score">0</span>m<br>
+      최고 기록: <span id="go-best">0</span>m
+    </div>
+    <div class="rankttl">랭킹 (TOP 3)</div>
+    <div class="ranks" id="go-ranks"></div>
+    <div class="btns">
+      <button class="pbtn pink" id="btn-retry">다시 하기</button>
+      <button class="pbtn gold" id="btn-copy">결과 복사</button>
+    </div>
+  </div>
+</div>
+
+<!-- Overlay nhắc xoay ngang -->
+<div id="rotate" class="overlay hidden">
+  <div class="ico">📱↻</div>
+  <div class="msg">가로로 돌려주세요</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* =========================================================================
+   나비의 옥상 — bản khổ NGANG 16:9
+   Lõi cơ chế Stickman Hook: giữ để móc dây (con lắc Verlet) → thả để bay.
+   Toàn bộ tự vẽ bằng Canvas, âm thanh Web Audio, không phụ thuộc file ngoài.
+   ========================================================================= */
+
+// ---- IX. CONFIG (dễ tinh chỉnh) ----
+const CONFIG = {
+  W:640, H:360, STEP:1/120,      // NGANG 16:9
+  GRAVITY: 1600,                 // px/giây^2
+  AIR_DAMP: 0.999,
+  ROPE_MIN: 50, ROPE_MAX: 160,
+  MAX_STEP: 22,
+  SCAN_R: 240, CONE_DEG: 60,
+  BOUNCE_IMPULSE: 15,            // đẩy lên-chéo phải
+  CAM_ANCHOR_X: 0.38,           // mèo giữ ~38% từ trái
+  STREET_Y: 520,                // mực đường = ranh giới chết (world Y)
+  FEVER_TIME: 5,
+  FEVER_GRAVITY_MULT: 0.6, FEVER_SCORE_MULT: 2,
+  HOOK_MIN_GAP: 80,
+  score: d => Math.floor(d/10),  // mét theo khoảng cách ngang
+};
+const { W, H, STEP, GRAVITY, AIR_DAMP, ROPE_MIN, ROPE_MAX, MAX_STEP,
+        SCAN_R, CONE_DEG, BOUNCE_IMPULSE, CAM_ANCHOR_X, STREET_Y,
+        FEVER_TIME, FEVER_GRAVITY_MULT, FEVER_SCORE_MULT, HOOK_MIN_GAP } = CONFIG;
+
+const CAT_R = 13;                       // bán kính va chạm của mèo
+const DEFAULT_CAM_Y = STREET_Y - H*0.9; // = 196: khung nhìn mặc định
+const clamp = (v,a,b)=>v<a?a:(v>b?b:v);
+const lerp  = (a,b,t)=>a+(b-a)*t;
+const rand  = (a,b)=>a+Math.random()*(b-a);
+
+// ---- Canvas + High-DPI ----
+const canvas = document.getElementById('cv');
+const ctx = canvas.getContext('2d');
+function setupCanvas(){
+  const DPR = Math.min(window.devicePixelRatio||1, 3);
+  canvas.width  = Math.round(W*DPR);
+  canvas.height = Math.round(H*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);   // vẽ theo toạ độ logic 640×360
+  ctx.imageSmoothingEnabled = false;
+}
+setupCanvas();
+
+// ---- Trạng thái toàn cục ----
+let gameState = 'ready';       // 'ready' | 'playing' | 'gameover'
+let paused = false;            // true khi đang cầm dọc (overlay xoay)
+let cameraX = 0, cameraY = DEFAULT_CAM_Y;
+let hooks = [], buildings = [], trampolines = [], items = [];
+let lastHookX = 0, lastHookY = 0, hookSeq = 0;
+let selectedHook = null;
+let distance = 0;              // toạ độ x xa nhất mèo từng đạt (dùng flex)
+let meters = 0;                // điểm luỹ kế (fever nhân đôi) -> quy ra "거리 m"
+let fishCount = 0;
+let feverTimer = 0;
+let holding = false;           // đang giữ (chạm/Space/chuột)
+let best = loadBest();
+let elapsed = 0;               // thời gian dùng cho hiệu ứng nhấp nháy (render)
+
+// Dữ liệu mèo (Verlet). Vận tốc là ẩn: v ≈ (x-px, y-py)
+const cat = { x:0, y:0, px:0, py:0, state:'FREE_FALL', anchor:null, ropeLen:0 };
+
+/* =========================================================================
+   II. VÒNG LẶP — FIXED TIMESTEP (vật lý đều, chống giật)
+   ========================================================================= */
+let acc = 0, last = performance.now();
+function frame(now){
+  const dtReal = Math.min((now - last)/1000, 0.1); last = now;
+  elapsed += dtReal;
+  if (gameState === 'playing' && !paused){
+    acc += dtReal;
+    while (acc >= STEP){ physicsStep(STEP); acc -= STEP; }
+  }
+  updateCamera();
+  render();
+  requestAnimationFrame(frame);
+}
+
+/* =========================================================================
+   III. LÕI VẬT LÝ — Verlet + ràng buộc khoảng cách (con lắc)
+   ========================================================================= */
+function physicsStep(dt){
+  // 0) Tìm điểm móc phía trước (để gợi ý sáng + để attach)
+  updateTargeting();
+
+  // 0.1) Xử lý ý định điều khiển (một thao tác): giữ = móc, thả = nhả
+  if (holding && (cat.state==='FREE_FALL' || cat.state==='BOUNCING') && selectedHook) attach(selectedHook);
+  if (!holding && cat.state==='SWINGING') release();
+
+  // Fever giảm dần
+  if (feverTimer > 0){ feverTimer -= dt; if (feverTimer < 0) feverTimer = 0; }
+  const g = GRAVITY * (feverTimer>0 ? FEVER_GRAVITY_MULT : 1);
+
+  // 1) Verlet: quán tính bước trước + trọng lực
+  let vx = (cat.x - cat.px) * AIR_DAMP;
+  let vy = (cat.y - cat.py) * AIR_DAMP;
+  cat.px = cat.x; cat.py = cat.y;
+  cat.x += vx;
+  cat.y += vy + g * dt * dt;             // trọng lực px/giây^2
+
+  // 2) Nếu đang đu: kéo mèo về đúng vòng tròn bán kính ropeLen quanh anchor
+  if (cat.state === 'SWINGING') applyRopeConstraint();
+
+  // 3) Kẹp tốc độ chống xuyên vật / nổ số
+  clampSpeed(MAX_STEP);
+
+  // 4) Va chạm đệm nảy, nhặt vật phẩm, cập nhật điểm, sinh map, check chết
+  if (cat.state !== 'SWINGING') checkTrampolines();
+  checkItems();
+  advanceState();
+  generateAhead();
+  cullBehind();
+  checkDeath();
+
+  if (cat.state === 'BOUNCING') cat.state = 'FREE_FALL'; // BOUNCING chỉ 1 nhịp
+}
+
+// Kéo mèo về đúng bán kính dây: chỉ triệt tiêu thành phần hướng tâm,
+// giữ nguyên thành phần tiếp tuyến -> tự sinh chuyển động con lắc.
+function applyRopeConstraint(){
+  let dx = cat.x - cat.anchor.x, dy = cat.y - cat.anchor.y;
+  let d  = Math.hypot(dx, dy) || 1e-4;
+  let diff = (d - cat.ropeLen) / d;
+  cat.x -= dx * diff;
+  cat.y -= dy * diff;
+  // KHÔNG chỉnh px/py -> thành phần hướng tâm bị triệt tiêu, chỉ còn tiếp tuyến
+}
+
+// Kẹp độ dịch chuyển mỗi bước (đồng nghĩa kẹp tốc độ)
+function clampSpeed(maxStep){
+  let vx = cat.x - cat.px, vy = cat.y - cat.py;
+  let sp = Math.hypot(vx, vy);
+  if (sp > maxStep){ let k = maxStep/sp; cat.px = cat.x - vx*k; cat.py = cat.y - vy*k; }
+}
+
+// Attach (giữ): móc dây vào hook đã chọn -> chuyển đà rơi thành đu
+function attach(hook){
+  cat.anchor = hook;
+  cat.ropeLen = clamp(Math.hypot(cat.x-hook.x, cat.y-hook.y), ROPE_MIN, ROPE_MAX);
+  cat.state = 'SWINGING';
+  sfx('hook');
+}
+// Release (thả): nhả dây -> bay tiếp theo tiếp tuyến, đà tự bảo toàn
+function release(){
+  cat.anchor = null;
+  cat.state = 'FREE_FALL';
+  sfx('whoosh');
+}
+
+/* =========================================================================
+   IV. TỰ ĐỘNG TÌM ĐIỂM MÓC — hướng SANG PHẢI (nón phải-chéo-lên)
+   ========================================================================= */
+function updateTargeting(){
+  selectedHook = null;
+  // Trục nón = pha trộn vector vận tốc & hướng "phải-chéo-lên"
+  let vx = cat.x - cat.px, vy = cat.y - cat.py;
+  let vlen = Math.hypot(vx, vy);
+  const rux = 1, ruy = -0.5, rl = Math.hypot(rux, ruy); // phải + hơi lên
+  let axx, axy;
+  if (vlen > 0.6){ axx = (vx/vlen)*0.6 + (rux/rl)*0.4; axy = (vy/vlen)*0.6 + (ruy/rl)*0.4; }
+  else           { axx = rux/rl; axy = ruy/rl; }
+  const al = Math.hypot(axx, axy) || 1; axx/=al; axy/=al;
+
+  const cosHalf = Math.cos(CONE_DEG*Math.PI/180);
+  let best = null, bestScore = -Infinity;
+  for (const h of hooks){
+    if (h === cat.anchor) continue;                 // bỏ hook đang bám
+    const dx = h.x - cat.x, dy = h.y - cat.y;
+    const d = Math.hypot(dx, dy);
+    if (d > SCAN_R || d < 1) continue;              // 1) quét khoảng cách
+    const dot = (dx/d)*axx + (dy/d)*axy;
+    if (dot < cosHalf) continue;                    // 2) lọc hướng (nón)
+    const s = dot*1.0 - (d/SCAN_R)*0.6;             // 3) gần + lệch trục ít
+    if (s > bestScore){ bestScore = s; best = h; }
+  }
+  selectedHook = best;
+}
+
+/* =========================================================================
+   VII. Đệm nảy — cứu khi thả hụt & tái tạo đà (xung lực lên-chéo phải)
+   ========================================================================= */
+function checkTrampolines(){
+  const vy = cat.y - cat.py;
+  for (const t of trampolines){
+    if (cat.x > t.x - t.w/2 && cat.x < t.x + t.w/2 &&
+        cat.y + CAT_R >= t.y && cat.y + CAT_R <= t.y + 26 && vy >= 0){
+      // Gán lại (x-px, y-py) để có vận tốc mạnh hướng lên-chéo phải
+      cat.px = cat.x - BOUNCE_IMPULSE*0.55;
+      cat.py = cat.y + BOUNCE_IMPULSE;
+      cat.state = 'BOUNCING';
+      sfx('bounce');
+      break;
+    }
+  }
+}
+
+// Nhặt 붕어빵 (+điểm) & 츄르 (Fever)
+function checkItems(){
+  for (const it of items){
+    if (it.got) continue;
+    if (Math.hypot(cat.x-it.x, cat.y-it.y) < CAT_R + 14){
+      it.got = true;
+      if (it.type === 'fish'){ fishCount++; meters += (feverTimer>0?FEVER_SCORE_MULT:1)*8; sfx('collect'); }
+      else if (it.type === 'churu'){ feverTimer = FEVER_TIME; sfx('fever'); toast('피버 타임! ⚡'); }
+    }
+  }
+}
+
+// Cập nhật điểm theo khoảng cách (fever nhân đôi) & trạng thái xa nhất
+function advanceState(){
+  if (cat.x > distance){
+    const gain = (cat.x - distance) / 10 * (feverTimer>0 ? FEVER_SCORE_MULT : 1);
+    meters += gain;
+    distance = cat.x;
+  }
+}
+
+function checkDeath(){
+  if (cat.state === 'DEAD') return;
+  if (cat.y - CAT_R >= STREET_Y){ die(); }   // chạm đường = game over
+}
+function die(){
+  cat.state = 'DEAD';
+  sfx('gameover');
+  endGame();
+}
+
+/* =========================================================================
+   VI. Camera — tiến sang phải (không lùi); dọc pan lên khi vọt cao
+   ========================================================================= */
+function updateCamera(){
+  // Ngang: chỉ tiến, giữ mèo ~38% từ trái
+  cameraX = Math.max(cameraX, cat.x - W*CAM_ANCHOR_X);
+  // Dọc: mặc định cố định; khi mèo vọt lên cao thì pan lên (không đuổi xuống dưới đường)
+  const targetY = Math.min(DEFAULT_CAM_Y, cat.y - H*0.2);
+  cameraY = lerp(cameraY, targetY, 0.12);
+}
+
+/* =========================================================================
+   VIII. Sinh map chống kẹt — luôn đu được sang phải
+   ========================================================================= */
+// Độ khó tăng DẦN theo khoảng cách: ~100m đầu giữ dễ nhất, rồi smoothstep tăng
+// chậm rãi, chạm mức khó tối đa quanh ~1200m. (0 = dễ nhất, 1 = khó nhất)
+function difficultyAt(x){
+  const t = clamp((x - 1000) / 11000, 0, 1);
+  return t*t*(3 - 2*t);   // smoothstep -> đầu game rất thoải, không dốc đứng
+}
+
+function generateAhead(){
+  const limit = cameraX + W + 400;
+  while (lastHookX < limit){
+    const diff = difficultyAt(lastHookX);
+    // 1) Trong tầm với + 2) không quá gần: gap nhỏ khi dễ, rộng dần khi khó
+    const gap = Math.max(HOOK_MIN_GAP, rand(lerp(110,165,diff), lerp(150,285,diff)));
+    // 3) cao độ dao động nhỏ khi dễ, mạnh dần khi khó
+    const vary = lerp(20, 135, diff);
+    const nx = lastHookX + gap;
+    // Kéo nhẹ về dải cao độ thoải mái (~250) để không trôi lên/xuống cực đoan;
+    // trần 330 để đáy cú đu (anchor.y + ROPE_MAX) luôn cao hơn mặt đường -> bớt chết oan
+    const ny = clamp(lerp(lastHookY, 250, 0.18) + rand(-vary, vary), 170, 330);
+
+    const hook = { x:nx, y:ny };
+    hooks.push(hook);
+    buildings.push(makeBuildingUnder(nx, ny, gap));
+
+    // Trampoline (lưới an toàn): dày & rộng khi dễ, thưa & hẹp dần khi khó
+    if (gap > 120 && Math.random() < lerp(0.5, 0.05, diff)){
+      trampolines.push({ x:lastHookX + gap*0.5, y:STREET_Y - 22, w:Math.round(lerp(82,56,diff)) });
+    }
+    // 붕어빵: rải theo cung bay giữa hai hook
+    if (Math.random() < 0.6){
+      const n = 1 + (Math.random()<0.4?1:0);
+      for (let i=0;i<n;i++){
+        const t = (i+1)/(n+1);
+        items.push({ type:'fish', x:lerp(lastHookX,nx,t), y:Math.min(lastHookY,ny) - rand(20,60), got:false });
+      }
+    }
+    // 츄르 (Fever) hiếm
+    if (Math.random() < 0.06){
+      items.push({ type:'churu', x:lerp(lastHookX,nx,0.5), y:Math.min(lastHookY,ny) - rand(30,70), got:false });
+    }
+
+    lastHookX = nx; lastHookY = ny; hookSeq++;
+  }
+}
+function cullBehind(){
+  const min = cameraX - 260;
+  hooks       = hooks.filter(h=>h.x > min);
+  buildings   = buildings.filter(b=>b.x + b.w/2 > min);
+  trampolines = trampolines.filter(t=>t.x + t.w > min);
+  items       = items.filter(it=>it.x > min);
+}
+// Toà nhà nằm dưới mỗi hook (mái nhô lên gần hook)
+function makeBuildingUnder(x, y, gap){
+  const w = clamp(gap*0.92, 70, 200);
+  const roofY = clamp(y + rand(46, 88), y+40, STREET_Y - 60);
+  return { x, w, roofY, tone:(hookSeq%5) };
+}
+
+/* =========================================================================
+   Điều khiển (§V) — một thao tác duy nhất
+   ========================================================================= */
+function press(){ if (!audioReady) initAudio(); holding = true; }
+function unpress(){ holding = false; }
+
+canvas.addEventListener('pointerdown', e=>{ e.preventDefault(); if (gameState==='playing') press(); }, {passive:false});
+window.addEventListener('pointerup',   e=>{ if (gameState==='playing') unpress(); });
+window.addEventListener('pointercancel', ()=>unpress());
+window.addEventListener('keydown', e=>{
+  if (e.code==='Space'){ e.preventDefault(); if (gameState==='playing') press(); }
+});
+window.addEventListener('keyup', e=>{ if (e.code==='Space' && gameState==='playing') unpress(); });
+canvas.addEventListener('touchstart', e=>e.preventDefault(), {passive:false});
+canvas.addEventListener('contextmenu', e=>e.preventDefault());
+
+/* =========================================================================
+   Vòng đời màn chơi
+   ========================================================================= */
+function startGame(){
+  // Reset thế giới
+  hooks = []; buildings = []; trampolines = []; items = [];
+  distance = 0; meters = 0; fishCount = 0; feverTimer = 0; holding = false;
+  hookSeq = 0;
+
+  // Khởi đầu rất dễ (§VIII.4): nhiều hook gần & bằng phẳng + 2 trampoline onboarding
+  const start = [ {x:240,y:232}, {x:356,y:228}, {x:470,y:234}, {x:586,y:230}, {x:702,y:236} ];
+  for (const h of start){ hooks.push(h); buildings.push(makeBuildingUnder(h.x, h.y, 120)); }
+  trampolines.push({ x:300, y:STREET_Y-22, w:86 });
+  trampolines.push({ x:528, y:STREET_Y-22, w:86 });
+  lastHookX = 702; lastHookY = 236;
+
+  // Mèo xuất phát FREE_FALL, có đà phải-chéo-lên hướng về hook đầu
+  cat.x = 170; cat.y = 282; cat.px = 167; cat.py = 285;
+  cat.state = 'FREE_FALL'; cat.anchor = null; cat.ropeLen = 0;
+
+  cameraX = cat.x - W*CAM_ANCHOR_X;
+  cameraY = DEFAULT_CAM_Y;
+
+  generateAhead();
+  gameState = 'playing';
+  hide('ready'); hide('gameover');
+}
+
+function endGame(){
+  gameState = 'gameover';
+  const finalScore = Math.floor(meters);    // meters chính là điểm (m) = floor(distance/10) có nhân Fever
+  const isRecord = updateBest(finalScore);
+
+  document.getElementById('go-score').textContent = finalScore;
+  document.getElementById('go-best').textContent = best[0] || 0;
+  toggle('newrec', isRecord);
+
+  // Bảng TOP 3
+  const ranks = document.getElementById('go-ranks');
+  ranks.innerHTML = '';
+  for (let i=0;i<3;i++){
+    const v = best[i]||0;
+    const medal = ['🥇','🥈','🥉'][i];
+    const hot = (isRecord && v===finalScore && i===best.indexOf(finalScore)) ? ' hot' : '';
+    ranks.innerHTML += `<div class="${hot.trim()}">${medal} ${v}m</div>`;
+  }
+  show('gameover');
+}
+
+/* =========================================================================
+   XII. Lưu điểm cao (Top 3) — localStorage, fallback biến phiên
+   ========================================================================= */
+function loadBest(){
+  try{ const v = JSON.parse(localStorage.getItem('nabi_roof_best')); if (Array.isArray(v)) return v.slice(0,3); }catch(e){}
+  return [0,0,0];
+}
+function updateBest(score){
+  best.push(score);
+  best.sort((a,b)=>b-a);
+  best = best.slice(0,3);
+  try{ localStorage.setItem('nabi_roof_best', JSON.stringify(best)); }catch(e){}
+  return score > 0 && score >= best[0] && best.indexOf(score) === 0;
+}
+
+/* =========================================================================
+   XI. Flex — sao chép kết quả
+   ========================================================================= */
+function copyResult(){
+  const score = Math.floor(meters);
+  const text = `🐱 나비의 옥상\n거리 ${score}m 🧶  붕어빵 x${fishCount}\n서울 지붕을 타고 날아갔다!\n👉 지금 도전: ${location.href}`;
+  const done = ()=>toast('복사됨! 카톡에 붙여넣기 하세요 📋');
+  try{
+    navigator.clipboard.writeText(text).then(done, ()=>fallbackCopy(text, done));
+  }catch(e){ fallbackCopy(text, done); }
+}
+function fallbackCopy(text, done){
+  try{
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta); done();
+  }catch(e){ toast('복사 실패 😿'); }
+}
+
+/* =========================================================================
+   XIII. Âm thanh — Web Audio (không cần file), bọc try/catch
+   ========================================================================= */
+let AC = null, audioReady = false, soundOn = true;
+function initAudio(){
+  try{ AC = new (window.AudioContext||window.webkitAudioContext)(); audioReady = true; }
+  catch(e){ audioReady = false; }
+}
+function sfx(kind){
+  if (!soundOn || !audioReady || !AC) return;
+  try{
+    const now = AC.currentTime;
+    const presets = {
+      hook:    {f:520, f2:680, t:'square',   d:0.10, g:0.16},
+      whoosh:  {f:300, f2:180, t:'sawtooth', d:0.14, g:0.10},
+      bounce:  {f:220, f2:520, t:'square',   d:0.14, g:0.18},
+      collect: {f:660, f2:990, t:'triangle', d:0.12, g:0.16},
+      fever:   {f:440, f2:880, t:'square',   d:0.30, g:0.18},
+      gameover:{f:330, f2:110, t:'sawtooth', d:0.45, g:0.20},
+    };
+    const p = presets[kind]; if (!p) return;
+    const osc = AC.createOscillator(), gain = AC.createGain();
+    osc.type = p.t; osc.frequency.setValueAtTime(p.f, now);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(1,p.f2), now + p.d);
+    gain.gain.setValueAtTime(p.g, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + p.d);
+    osc.connect(gain).connect(AC.destination);
+    osc.start(now); osc.stop(now + p.d + 0.02);
+  }catch(e){}
+}
+
+/* =========================================================================
+   RENDER — vẽ toàn bộ (gom sprite vào drawSprite để sau thay PNG)
+   ========================================================================= */
+function render(){
+  ctx.clearRect(0,0,W,H);
+  drawSky();
+  drawCityLayer(FAR);           // dải nhà xa (parallax chậm)
+  drawCityLayer(MID);           // dải nhà giữa (đèn thưa)
+  drawBuildings();              // nhà gần (nơi treo đèn lồng)
+  drawStreet();
+  drawItems();
+  drawTrampolines();
+  drawHooks();
+  if (cat.state === 'SWINGING' && cat.anchor) drawRope();
+  drawSprite('cat', cat.x, cat.y);
+  if (gameState === 'playing') drawHUD();
+}
+
+// Toạ độ world -> screen
+const sx = x => x - cameraX;
+const sy = y => y - cameraY;
+
+/* ---- Hệ vẽ PIXEL ART ----
+   Sprite = mảng chuỗi, mỗi ký tự là 1 "điểm ảnh nghệ thuật"; ' '/'.' = trong suốt.
+   ps = số px logic cho mỗi điểm ảnh (chunky). Toạ độ được làm tròn cho sắc nét. */
+function blitOn(g, map, pal, cx, cy, ps, flip){
+  const h = map.length, w = map[0].length;
+  const ox = Math.round(cx - w*ps/2), oy = Math.round(cy - h*ps/2);
+  for (let r=0;r<h;r++){ const row = map[r];
+    for (let c=0;c<w;c++){ const ch = row[flip ? (w-1-c) : c];
+      if (ch===' '||ch==='.') continue; const col = pal[ch]; if (!col) continue;
+      g.fillStyle = col; g.fillRect(ox+c*ps, oy+r*ps, ps, ps);
+    } }
+}
+function blit(map, pal, cx, cy, ps, flip){ blitOn(ctx, map, pal, cx, cy, ps, flip); }
+// Băm số nguyên (ổn định) -> chọn chiều cao nhà & trạng thái đèn không đổi theo frame
+function hash(n){ n=(n^61)^(n>>>16); n=n+(n<<3); n=n^(n>>>4); n=Math.imul(n,0x27d4eb2d); n=n^(n>>>15); return n>>>0; }
+
+// --- Bảng màu & sprite (pixel) ---
+const PAL_CAT = { O:'#241a3a', Y:'#ffb14e', T:'#e8912f', W:'#fff3e0', c:'#ff9ab0', P:'#ff5f80', K:'#241a3a' };
+const SPR_CAT = [
+  "....O....O....","...OYO..OYO...","...OYYOOYYO...","..OYYYYYYYYO..",
+  ".OYYYYYYYYYYO.",".OYYKYYYYKYYO.",".OYcYYWWYYcYO.","TOYYWWPPWWYYO.",
+  "TTOYWWWWWWYO..",".TTOYWWWWYO...","...OYYYYYYO...","....OOOOOO....",
+];
+const PAL_LAN = { O:'#3a1420', C:'#ffcf6a', c:'#e0a63c', R:'#ff5a45', r:'#ff8a6a', H:'#ffe0b0', s:'#e0c060' };
+const SPR_LAN = [
+  "....s....","...ccc...","..CCCCC..",".ORRRRRO.","ORRrHrRRO",
+  "ORRrrrRRO","ORRRRRRRO",".ORRRRRO.","..CCCCC..","...c.c...","....s....",
+];
+const PAL_FISH = { O:'#5a3a12', B:'#e0a85a', b:'#c98a3e', E:'#241408', H:'#f5cf8a' };
+const SPR_FISH = [
+  "..OOOO....",".OBHBBO.O.","OBEBBBBOBO","OBBBbBBBBB","OBBBBBBOBO",".OBBBBO.O.","..OOOO....",
+];
+const PAL_CHU = { O:'#8a2a6a', T:'#ff6ec7', t:'#ff9ad8', W:'#fff6ff' };
+const SPR_CHU = [
+  ".OOOO.","OTttTO","OTttTO","OWWWWO","OTttTO","OTttTO","OTttTO","OTttTO","OTttTO","OTttTO",".OOOO.",
+];
+const SPR_CAR = [ "...HHHH...","..HwwwwH..",".HHHHHHHH.","HHHHHHHHHH",".K.....K.." ];
+
+// Sao trời (khởi tạo 1 lần) — nhấp nháy nhẹ theo thời gian
+const STARS = [];
+for (let i=0;i<70;i++) STARS.push({ x:Math.random()*W, y:Math.random()*H*0.55, s:(Math.random()<0.3?2:1), b:0.5+Math.random()*0.5, p:Math.random()*6.283 });
+
+// Cấu hình 2 lớp thành phố parallax phía sau
+const FAR = { speed:0.15, w:46, gap:14, minH:60, maxH:150, body:'#120e2c', edge:'#1b1640', win:'#2b2452', winA:1, seed:11 };
+const MID = { speed:0.40, w:58, gap:20, minH:100, maxH:210, body:'#191340', edge:'#2a2258', win:'#ffe08a', winA:2, seed:37 };
+
+function roundBlob(x,y,w,h){ ctx.beginPath(); ctx.ellipse(x,y,w/2,h,0,0,6.283); ctx.fill(); }
+// Khung ngắm 4 góc (pixel) quanh đèn lồng được chọn
+function drawBracket(x,y,s,col){ ctx.fillStyle=col; const L=6,T=2;
+  ctx.fillRect(x-s,y-s,L,T); ctx.fillRect(x-s,y-s,T,L);
+  ctx.fillRect(x+s-L,y-s,L,T); ctx.fillRect(x+s-T,y-s,T,L);
+  ctx.fillRect(x-s,y+s-T,L,T); ctx.fillRect(x-s,y+s-L,T,L);
+  ctx.fillRect(x+s-L,y+s-T,L,T); ctx.fillRect(x+s-T,y+s-L,T,L);
+}
+function pixelPanel(x,y,w,h){
+  ctx.fillStyle='rgba(13,10,36,.82)'; ctx.fillRect(x,y,w,h);
+  ctx.strokeStyle='rgba(95,230,255,.7)'; ctx.lineWidth=1; ctx.strokeRect(x+0.5,y+0.5,w-1,h-1);
+}
+// Vẽ mèo Nabi (pixel) lên canvas mascot ở màn ready
+function drawMascot(){
+  const mc = document.getElementById('mascot'); if (!mc) return;
+  const g = mc.getContext('2d'); g.imageSmoothingEnabled = false;
+  g.clearRect(0,0,mc.width,mc.height);
+  blitOn(g, SPR_CAT, PAL_CAT, mc.width/2, mc.height/2, 4);
+}
+
+// Trời chàm→hồng kiểu anime + trăng + sao + mây; Fever phủ neon
+function drawSky(){
+  const fever = feverTimer > 0;
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#0a0824'); g.addColorStop(.35,'#241243');
+  g.addColorStop(.62,'#5a1f4e'); g.addColorStop(.85,'#a83f5a'); g.addColorStop(1,'#e0896b');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  // sao nhấp nháy
+  for (const st of STARS){
+    const tw = 0.35 + 0.65*(0.5+0.5*Math.sin(elapsed*2 + st.p));
+    ctx.fillStyle = `rgba(255,255,255,${(tw*st.b).toFixed(3)})`;
+    const px = ((st.x - cameraX*0.05) % W + W) % W;
+    ctx.fillRect(px|0, st.y|0, st.s, st.s);
+  }
+  // trăng (parallax rất chậm)
+  const mx = ((W*0.72 - cameraX*0.03) % (W+120) + (W+120)) % (W+120) - 60;
+  ctx.fillStyle='rgba(255,246,216,.16)'; ctx.beginPath(); ctx.arc(mx,64,34,0,6.283); ctx.fill();
+  ctx.fillStyle='#fdf6d8'; ctx.beginPath(); ctx.arc(mx,64,20,0,6.283); ctx.fill();
+  ctx.fillStyle='#e9dfba'; ctx.beginPath(); ctx.arc(mx+7,59,4,0,6.283); ctx.arc(mx-5,70,3,0,6.283); ctx.fill();
+  // mây mờ trôi
+  ctx.fillStyle='rgba(255,150,190,.10)';
+  const co=(cameraX*0.06)%(W+220);
+  for (let i=0;i<3;i++){ const cx=((i*260-co)%(W+220)+(W+220))%(W+220)-110; roundBlob(cx,108+i*22,130,15); }
+  if (fever){
+    const p=0.5+0.5*Math.sin(elapsed*5);
+    const fg=ctx.createLinearGradient(0,0,0,H);
+    fg.addColorStop(0,`rgba(95,230,255,${(0.16+p*0.12).toFixed(3)})`);
+    fg.addColorStop(1,`rgba(255,110,199,${(0.16+p*0.12).toFixed(3)})`);
+    ctx.fillStyle=fg; ctx.fillRect(0,0,W,H);
+  }
+}
+// Một lớp thành phố parallax (chiều cao & đèn suy ra từ hash -> ổn định, cuộn mượt)
+function drawCityLayer(o){
+  const groundY = sy(STREET_Y), total = o.w+o.gap, off = Math.floor(cameraX*o.speed);
+  const startCol = Math.floor(off/total)-1, cols = Math.ceil(W/total)+2;
+  for (let i=0;i<=cols;i++){
+    const col = startCol+i;
+    const h = o.minH + hash(col*2654435761 + o.seed) % (o.maxH-o.minH);
+    const bx = Math.round(col*total - off), by = Math.round(groundY - h);
+    ctx.fillStyle = o.body; ctx.fillRect(bx, by, o.w, h+60);
+    ctx.fillStyle = o.edge; ctx.fillRect(bx, by, o.w, 2);
+    if (o.win){
+      for (let wy=by+6; wy<groundY-4; wy+=9)
+        for (let wx=bx+4; wx<bx+o.w-4; wx+=9)
+          if ((hash(col*131+wx*7+wy*13)&7) < o.winA){ ctx.fillStyle = o.win; ctx.fillRect(wx, wy, 3, 3); }
+    }
+  }
+}
+
+// Tông nhà gần (chàm/tím/teal + đèn ấm), kèm màu biển hiệu neon
+const BTONE = [
+  {wall:'#2b2450', edge:'#4a3f7a', sign:'#5fe6ff'},
+  {wall:'#26324f', edge:'#3f5578', sign:'#ff6ec7'},
+  {wall:'#3a2748', edge:'#5a3d6e', sign:'#ffd36e'},
+  {wall:'#213f45', edge:'#356169', sign:'#7dffd0'},
+  {wall:'#3a2b2f', edge:'#5a4147', sign:'#ff9a5c'},
+];
+// Nhà gần (nơi treo đèn lồng): tường tối, cửa sổ đèn ấm cố định, biển neon, bồn nước/ăng-ten
+function drawBuildings(){
+  const fever = feverTimer > 0;
+  const bottom = Math.round(sy(STREET_Y));
+  for (const b of buildings){
+    const bx = Math.round(sx(b.x - b.w/2)), top = Math.round(sy(b.roofY)), w = Math.round(b.w);
+    if (bx > W || bx + w < 0) continue;
+    const t = BTONE[b.tone];
+    ctx.fillStyle = t.wall; ctx.fillRect(bx, top, w, bottom-top);
+    // gờ mái
+    ctx.fillStyle = t.edge; ctx.fillRect(bx-2, top-3, w+4, 3); ctx.fillRect(bx, top, w, 2);
+    // cửa sổ (trạng thái sáng/tối cố định theo toạ độ -> không nhấp nháy)
+    for (let wy=top+8, ry=0; wy<bottom-8; wy+=10, ry++){
+      for (let wx=bx+6, rx=0; wx<bx+w-8; wx+=12, rx++){
+        const hh = hash((b.x|0) + rx*29 + ry*131);
+        ctx.fillStyle = fever ? ((hh&1)?'#ff6ec7':'#5fe6ff')
+                      : ((hh&3)!==0 ? ((hh&7)===0 ? t.sign : '#ffdd8a') : '#171433');
+        ctx.fillRect(wx, wy, 6, 6);
+      }
+    }
+    // biển hiệu neon dọc trên vài toà
+    if (((b.x|0) % 3)===0){
+      const s0 = top+14, sh = Math.min(40, bottom-s0-8);
+      if (sh>6){ ctx.save(); ctx.shadowColor=t.sign; ctx.shadowBlur=10;
+        ctx.fillStyle=t.sign; ctx.fillRect(bx+w-14, s0, 6, sh); ctx.restore(); }
+    }
+    // vật thể trên mái
+    ctx.fillStyle = t.edge;
+    ctx.fillRect(bx+6, top-9, 10, 6);        // bồn nước
+    ctx.fillRect(bx+w-11, top-15, 2, 12);    // ăng-ten
+  }
+}
+// Đường phố neon ướt = ranh giới chết
+function drawStreet(){
+  const y = Math.round(sy(STREET_Y));
+  ctx.fillStyle = '#0c0b1e'; ctx.fillRect(0, y, W, H-y+4);
+  ctx.fillStyle = '#2a2550'; ctx.fillRect(0, y, W, 3);
+  ctx.fillStyle = 'rgba(95,230,255,.55)'; ctx.fillRect(0, y, W, 1);   // gờ sáng
+  // vệt phản chiếu neon dọc
+  const cols=['rgba(95,230,255,.10)','rgba(255,110,199,.10)','rgba(255,211,110,.10)'];
+  const roff = Math.floor(cameraX*0.5);
+  for (let i=0;i<8;i++){ const cx=((i*140-roff)%(W+140)+(W+140))%(W+140)-70;
+    ctx.fillStyle=cols[i%3]; ctx.fillRect(Math.round(cx), y+3, 22, H-y); }
+  // vạch kẻ đường (nét đứt vàng)
+  ctx.fillStyle = '#e0b84a';
+  const doff = Math.floor(cameraX*0.6) % 40;
+  for (let x=-doff; x<W; x+=40) ctx.fillRect(Math.round(x), y+20, 18, 3);
+  // xe pixel chạy
+  const carCols=['#ff6ec7','#5fe6ff','#ffd36e','#b98cff'];
+  const coff = Math.floor(cameraX*0.6);
+  for (let i=0;i<6;i++){ const cx=((i*170-coff)%(W+220)+(W+220))%(W+220)-110;
+    blit(SPR_CAR, {H:carCols[i%4], w:'#bfe6ff', K:'#100e20'}, Math.round(cx), y+16, 2); }
+}
+
+// Đèn lồng giấy = điểm móc; toả sáng ấm, cái được chọn có khung ngắm neon nhấp nháy
+function drawHooks(){
+  for (const h of hooks){
+    const x = Math.round(sx(h.x)), y = Math.round(sy(h.y));
+    if (x < -30 || x > W+30) continue;
+    const glow = (h === selectedHook) ? (0.5+0.5*Math.sin(elapsed*7)) : 0;
+    const rr = 20 + glow*8;
+    const gg = ctx.createRadialGradient(x,y,2,x,y,rr);
+    gg.addColorStop(0, `rgba(255,180,90,${(0.45+glow*0.4).toFixed(3)})`);
+    gg.addColorStop(1, 'rgba(255,150,60,0)');
+    ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(x,y,rr,0,6.283); ctx.fill();
+    blit(SPR_LAN, PAL_LAN, x, y, 2);
+    if (h === selectedHook) drawBracket(x, y, 15+glow*3, `rgba(95,230,255,${(0.7+glow*0.3).toFixed(3)})`);
+  }
+}
+// Dây = sợi chỉ phát sáng vàng
+function drawRope(){
+  ctx.strokeStyle = 'rgba(255,211,110,.9)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(sx(cat.anchor.x), sy(cat.anchor.y)); ctx.lineTo(sx(cat.x), sy(cat.y)); ctx.stroke();
+}
+// Trampoline = tấm vải sọc neon võng xuống giữa hai cọc (lưới an toàn)
+function drawTrampolines(){
+  for (const t of trampolines){
+    const cx = sx(t.x); if (cx+t.w < 0 || cx-t.w > W) continue;
+    const x0 = Math.round(cx-t.w/2), y0 = Math.round(sy(t.y)), w = Math.round(t.w);
+    ctx.fillStyle = '#3a2f5a'; ctx.fillRect(x0-2, y0-6, 3, 16); ctx.fillRect(x0+w-1, y0-6, 3, 16);
+    const stripes=['#5fe6ff','#ffffff','#ff6ec7'];
+    for (let i=0;i<w;i+=4){
+      const sag = Math.round(Math.sin(Math.PI*(i/w))*7);
+      ctx.fillStyle = stripes[((i/4)|0)%3]; ctx.fillRect(x0+i, y0+sag, 4, 4);
+      ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.fillRect(x0+i, y0+sag, 4, 1);
+    }
+  }
+}
+function drawItems(){
+  for (const it of items){
+    if (it.got) continue;
+    const x = sx(it.x); if (x < -20 || x > W+20) continue;
+    drawSprite(it.type, it.x, it.y + Math.sin(elapsed*3 + it.x)*3);
+  }
+}
+
+// Gom TẤT CẢ vẽ sprite pixel vào một chỗ (đổi sang PNG sau chỉ cần sửa ở đây)
+function drawSprite(kind, wx, wy){
+  const x = Math.round(sx(wx)), y = Math.round(sy(wy));
+  switch(kind){
+    case 'cat':  blit(SPR_CAT, PAL_CAT, x, y, 2); break;      // Nabi (không xoay -> giữ nét pixel)
+    case 'hook': blit(SPR_LAN, PAL_LAN, x, y, 2); break;
+    case 'fish': blit(SPR_FISH, PAL_FISH, x, y, 2); break;    // 붕어빵
+    case 'churu': {                                            // 츄르 (Fever) — tuýp neon phát sáng
+      const p = 0.5+0.5*Math.sin(elapsed*8);
+      const gg = ctx.createRadialGradient(x,y,2,x,y,18);
+      gg.addColorStop(0, `rgba(255,110,199,${(0.45+p*0.4).toFixed(3)})`); gg.addColorStop(1,'rgba(255,110,199,0)');
+      ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(x,y,18,0,6.283); ctx.fill();
+      blit(SPR_CHU, PAL_CHU, x, y, 2); break;
+    }
+  }
+}
+
+// HUD neon (trên canvas, dùng font pixel)
+function drawHUD(){
+  const fever = feverTimer > 0;
+  const score = Math.floor(meters);
+  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  pixelPanel(10, 10, 150, 42);
+  ctx.fillStyle = fever ? '#ff6ec7' : '#5fe6ff'; ctx.font = '15px Galmuri11, monospace';
+  ctx.fillText(`거리 ${score}m`, 20, 16);
+  ctx.fillStyle = '#ffd36e'; ctx.font = '11px Galmuri9, monospace';
+  ctx.fillText(`최고 ${best[0]||0}m`, 20, 34);
+  // 붕어빵 đếm
+  ctx.textAlign='right'; ctx.fillStyle='#ffdd8a'; ctx.font='13px Galmuri9, monospace';
+  ctx.fillText(`🐟 x${fishCount}`, W-14, 14);
+  // Thanh Fever
+  if (feverTimer > 0){
+    ctx.textAlign='right'; ctx.fillStyle='#ff6ec7'; ctx.font='11px Galmuri9, monospace';
+    ctx.fillText('피버!', W-14, 32);
+    const bw = 120, bx = W-14-bw, by = 46;
+    ctx.fillStyle='rgba(13,10,36,.85)'; ctx.fillRect(bx-2, by-2, bw+4, 12);
+    ctx.strokeStyle='#ff6ec7'; ctx.lineWidth=1; ctx.strokeRect(bx-1.5, by-1.5, bw+3, 11);
+    const p = feverTimer/FEVER_TIME;
+    const g = ctx.createLinearGradient(bx,0,bx+bw,0);
+    g.addColorStop(0,'#5fe6ff'); g.addColorStop(.5,'#ffd36e'); g.addColorStop(1,'#ff6ec7');
+    ctx.fillStyle=g; ctx.fillRect(bx, by, bw*p, 8);
+  }
+}
+
+/* =========================================================================
+   Overlay xoay ngang (§I) — pause khi cầm dọc
+   ========================================================================= */
+// Chỉ nhắc xoay ngang trên thiết bị CẢM ỨNG (mobile). Trên desktop/khung nhúng
+// (con trỏ chuột), dù khung có dạng đứng thì canvas vẫn tự letterbox -> chơi được ngay.
+const isTouchDevice = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window);
+function checkOrientation(){
+  const block = isTouchDevice && (window.innerHeight > window.innerWidth);
+  paused = block;
+  toggle('rotate', block);
+}
+window.addEventListener('resize', ()=>{ setupCanvas(); checkOrientation(); });
+window.addEventListener('orientationchange', ()=>{ setupCanvas(); checkOrientation(); });
+
+/* =========================================================================
+   UI helpers + gắn sự kiện nút
+   ========================================================================= */
+function show(id){ document.getElementById(id).classList.remove('hidden'); }
+function hide(id){ document.getElementById(id).classList.add('hidden'); }
+function toggle(id,on){ document.getElementById(id).classList.toggle('hidden', !on); }
+let toastTimer=null;
+function toast(msg){
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>el.classList.remove('show'), 1600);
+}
+
+document.getElementById('btn-start').addEventListener('click', ()=>{ if(!audioReady) initAudio(); startGame(); });
+document.getElementById('btn-retry').addEventListener('click', ()=>startGame());
+document.getElementById('btn-copy').addEventListener('click', copyResult);
+document.getElementById('sound').addEventListener('click', function(){
+  soundOn = !soundOn; this.textContent = soundOn ? '🔊' : '🔇';
+  if (soundOn && !audioReady) initAudio();
+});
+
+// Cập nhật "최고" ở màn ready + vẽ mascot pixel
+document.getElementById('ready-best').textContent = `최고: ${best[0]||0}m`;
+drawMascot();
+
+checkOrientation();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
