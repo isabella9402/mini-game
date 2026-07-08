@@ -364,26 +364,33 @@ function updateCamera(){
 /* =========================================================================
    VIII. Sinh map chống kẹt — luôn đu được sang phải
    ========================================================================= */
-function difficultyAt(x){ return clamp(x/4000, 0, 1); }   // 0 dễ → 1 khó (theo world x)
+// Độ khó tăng DẦN theo khoảng cách: ~100m đầu giữ dễ nhất, rồi smoothstep tăng
+// chậm rãi, chạm mức khó tối đa quanh ~1200m. (0 = dễ nhất, 1 = khó nhất)
+function difficultyAt(x){
+  const t = clamp((x - 1000) / 11000, 0, 1);
+  return t*t*(3 - 2*t);   // smoothstep -> đầu game rất thoải, không dốc đứng
+}
 
 function generateAhead(){
   const limit = cameraX + W + 400;
   while (lastHookX < limit){
     const diff = difficultyAt(lastHookX);
-    // 1) Trong tầm với + 2) không quá gần: khoảng cách ngang 120→280px
-    const gap = Math.max(HOOK_MIN_GAP, rand(lerp(120,170,diff), lerp(180,280,diff)));
-    // 3) cao độ dao động mạnh dần theo độ khó
-    const vary = lerp(40, 130, diff);
+    // 1) Trong tầm với + 2) không quá gần: gap nhỏ khi dễ, rộng dần khi khó
+    const gap = Math.max(HOOK_MIN_GAP, rand(lerp(110,165,diff), lerp(150,285,diff)));
+    // 3) cao độ dao động nhỏ khi dễ, mạnh dần khi khó
+    const vary = lerp(20, 135, diff);
     const nx = lastHookX + gap;
-    const ny = clamp(lastHookY + rand(-vary, vary), 175, 360);
+    // Kéo nhẹ về dải cao độ thoải mái (~250) để không trôi lên/xuống cực đoan;
+    // trần 330 để đáy cú đu (anchor.y + ROPE_MAX) luôn cao hơn mặt đường -> bớt chết oan
+    const ny = clamp(lerp(lastHookY, 250, 0.18) + rand(-vary, vary), 170, 330);
 
     const hook = { x:nx, y:ny };
     hooks.push(hook);
     buildings.push(makeBuildingUnder(nx, ny, gap));
 
-    // Trampoline: dày ở đầu, thưa dần khi khó (lưới an toàn ở khoảng trống rộng)
-    if (gap > 190 && Math.random() < lerp(0.55, 0.12, diff)){
-      trampolines.push({ x:lastHookX + gap*0.5, y:STREET_Y - 22, w:64 });
+    // Trampoline (lưới an toàn): dày & rộng khi dễ, thưa & hẹp dần khi khó
+    if (gap > 120 && Math.random() < lerp(0.5, 0.05, diff)){
+      trampolines.push({ x:lastHookX + gap*0.5, y:STREET_Y - 22, w:Math.round(lerp(82,56,diff)) });
     }
     // 붕어빵: rải theo cung bay giữa hai hook
     if (Math.random() < 0.6){
@@ -440,14 +447,15 @@ function startGame(){
   distance = 0; meters = 0; fishCount = 0; feverTimer = 0; holding = false;
   hookSeq = 0;
 
-  // Khởi đầu dễ (§VIII.4): vài hook gần nhau + 1 trampoline onboarding
-  const start = [ {x:240,y:200}, {x:370,y:196}, {x:500,y:214} ];
-  for (const h of start){ hooks.push(h); buildings.push(makeBuildingUnder(h.x, h.y, 130)); }
-  trampolines.push({ x:300, y:STREET_Y-22, w:70 });
-  lastHookX = 500; lastHookY = 214;
+  // Khởi đầu rất dễ (§VIII.4): nhiều hook gần & bằng phẳng + 2 trampoline onboarding
+  const start = [ {x:240,y:232}, {x:356,y:228}, {x:470,y:234}, {x:586,y:230}, {x:702,y:236} ];
+  for (const h of start){ hooks.push(h); buildings.push(makeBuildingUnder(h.x, h.y, 120)); }
+  trampolines.push({ x:300, y:STREET_Y-22, w:86 });
+  trampolines.push({ x:528, y:STREET_Y-22, w:86 });
+  lastHookX = 702; lastHookY = 236;
 
   // Mèo xuất phát FREE_FALL, có đà phải-chéo-lên hướng về hook đầu
-  cat.x = 170; cat.y = 250; cat.px = 167; cat.py = 253;
+  cat.x = 170; cat.y = 282; cat.px = 167; cat.py = 285;
   cat.state = 'FREE_FALL'; cat.anchor = null; cat.ropeLen = 0;
 
   cameraX = cat.x - W*CAM_ANCHOR_X;
