@@ -1,0 +1,277 @@
+{
+  "unit_world_per_voxel": 0.1,
+  "models": [
+    {
+      "name": "char_dokkaebi",
+      "file": "char_dokkaebi.glb",
+      "tris": 856,
+      "voxel_dims_xyz": [
+        8,
+        16,
+        6
+      ],
+      "world_size_xyz": [
+        0.8,
+        1.6,
+        0.6
+      ],
+      "kb": 78.0
+    },
+    {
+      "name": "tree_pine",
+      "file": "tree_pine.glb",
+      "tris": 460,
+      "voxel_dims_xyz": [
+        6,
+        12,
+        6
+      ],
+      "world_size_xyz": [
+        0.6,
+        1.2,
+        0.6
+      ],
+      "kb": 42.4
+    },
+    {
+      "name": "tree_round",
+      "file": "tree_round.glb",
+      "tris": 536,
+      "voxel_dims_xyz": [
+        8,
+        10,
+        6
+      ],
+      "world_size_xyz": [
+        0.8,
+        1.0,
+        0.6
+      ],
+      "kb": 49.2
+    },
+    {
+      "name": "rock",
+      "file": "rock.glb",
+      "tris": 324,
+      "voxel_dims_xyz": [
+        7,
+        5,
+        5
+      ],
+      "world_size_xyz": [
+        0.7,
+        0.5,
+        0.5
+      ],
+      "kb": 30.2
+    },
+    {
+      "name": "palanquin",
+      "file": "palanquin.glb",
+      "tris": 604,
+      "voxel_dims_xyz": [
+        10,
+        8,
+        6
+      ],
+      "world_size_xyz": [
+        1.0,
+        0.8,
+        0.6
+      ],
+      "kb": 55.3
+    },
+    {
+      "name": "guard",
+      "file": "guard.glb",
+      "tris": 932,
+      "voxel_dims_xyz": [
+        9,
+        16,
+        7
+      ],
+      "world_size_xyz": [
+        0.9,
+        1.6,
+        0.7
+      ],
+      "kb": 84.8
+    },
+    {
+      "name": "turtle",
+      "file": "turtle.glb",
+      "tris": 376,
+      "voxel_dims_xyz": [
+        6,
+        5,
+        9
+      ],
+      "world_size_xyz": [
+        0.6,
+        0.5,
+        0.9
+      ],
+      "kb": 34.9
+    },
+    {
+      "name": "eagle",
+      "file": "eagle.glb",
+      "tris": 500,
+      "voxel_dims_xyz": [
+        16,
+        8,
+        8
+      ],
+      "world_size_xyz": [
+        1.6,
+        0.8,
+        0.8
+      ],
+      "kb": 46.0
+    },
+    {
+      "name": "ghost",
+      "file": "ghost.glb",
+      "tris": 436,
+      "voxel_dims_xyz": [
+        4,
+        12,
+        6
+      ],
+      "world_size_xyz": [
+        0.4,
+        1.2,
+        0.6
+      ],
+      "kb": 40.3
+    },
+    {
+      "name": "item_sotteok",
+      "file": "item_sotteok.glb",
+      "tris": 244,
+      "voxel_dims_xyz": [
+        3,
+        10,
+        3
+      ],
+      "world_size_xyz": [
+        0.3,
+        1.0,
+        0.3
+      ],
+      "kb": 23.0
+    },
+    {
+      "name": "item_bungeoppang",
+      "file": "item_bungeoppang.glb",
+      "tris": 316,
+      "voxel_dims_xyz": [
+        10,
+        4,
+        4
+      ],
+      "world_size_xyz": [
+        1.0,
+        0.4,
+        0.4
+      ],
+      "kb": 29.5
+    },
+    {
+      "name": "item_chili",
+      "file": "item_chili.glb",
+      "tris": 188,
+      "voxel_dims_xyz": [
+        3,
+        9,
+        3
+      ],
+      "world_size_xyz": [
+        0.3,
+        0.9,
+        0.3
+      ],
+      "kb": 18.0
+    },
+    {
+      "name": "item_charm",
+      "file": "item_charm.glb",
+      "tris": 252,
+      "voxel_dims_xyz": [
+        4,
+        10,
+        2
+      ],
+      "world_size_xyz": [
+        0.4,
+        1.0,
+        0.2
+      ],
+      "kb": 23.7
+    },
+    {
+      "name": "tile_grass",
+      "file": "tile_grass.glb",
+      "tris": 560,
+      "voxel_dims_xyz": [
+        10,
+        2,
+        10
+      ],
+      "world_size_xyz": [
+        1.0,
+        0.2,
+        1.0
+      ],
+      "kb": 51.4
+    },
+    {
+      "name": "tile_stone",
+      "file": "tile_stone.glb",
+      "tris": 560,
+      "voxel_dims_xyz": [
+        10,
+        2,
+        10
+      ],
+      "world_size_xyz": [
+        1.0,
+        0.2,
+        1.0
+      ],
+      "kb": 51.4
+    },
+    {
+      "name": "tile_sand",
+      "file": "tile_sand.glb",
+      "tris": 560,
+      "voxel_dims_xyz": [
+        10,
+        2,
+        10
+      ],
+      "world_size_xyz": [
+        1.0,
+        0.2,
+        1.0
+      ],
+      "kb": 51.4
+    },
+    {
+      "name": "tile_water",
+      "file": "tile_water.glb",
+      "tris": 592,
+      "voxel_dims_xyz": [
+        10,
+        3,
+        10
+      ],
+      "world_size_xyz": [
+        1.0,
+        0.3,
+        1.0
+      ],
+      "kb": 54.2
+    }
+  ]
+}
