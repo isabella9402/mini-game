@@ -313,10 +313,10 @@ function initThree(){
   renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 
   scene=new THREE.Scene();
-  // Joseon-fantasy sky: soft vertical gradient (lavender -> pink -> peach)
+  // 3D_map.png sky: bright, airy pale blue -> white haze
   scene.background=makeSkyTexture();
-  // fog fades the far rows AND turns the distant voxel mountains misty
-  scene.fog=new THREE.Fog(0xf1d9ea, 82, 165);
+  // gentle far haze so distant mountains read as misty, but the play area stays crisp & bright
+  scene.fog=new THREE.Fog(0xeef3fb, 98, 205);
 
   const aspect=window.innerWidth/window.innerHeight;
   // vertical span kept at 2*VIEW (no aspect distortion) but shifted up so the
@@ -326,9 +326,10 @@ function initThree(){
   camera.position.set(CAM.x,CAM.y,CAM.z); camera.lookAt(0,0,0);
   scene.add(camera);
 
-  scene.add(new THREE.AmbientLight(0xffffff,0.46));
-  const hemi=new THREE.HemisphereLight(0xfff2f6,0xcfe6d8,0.42); scene.add(hemi);   // warm sky top / soft green ground bounce
-  keyLight=new THREE.DirectionalLight(0xfff1df,0.80);
+  // bright pastel daylight, but keep enough key light for clear voxel shading (3D_map depth)
+  scene.add(new THREE.AmbientLight(0xffffff,0.50));
+  const hemi=new THREE.HemisphereLight(0xffffff,0xd9ecc0,0.40); scene.add(hemi);   // white sky / soft green ground bounce
+  keyLight=new THREE.DirectionalLight(0xfff6ea,0.78);
   keyLight.position.set(60,90,40); keyLight.castShadow=true;
   keyLight.shadow.mapSize.set(2048,2048);
   const s=26; keyLight.shadow.camera.left=-s; keyLight.shadow.camera.right=s;
@@ -336,7 +337,7 @@ function initThree(){
   keyLight.shadow.camera.near=1; keyLight.shadow.camera.far=280; keyLight.shadow.bias=-0.0008; keyLight.shadow.normalBias=0.02;
   scene.add(keyLight); scene.add(keyLight.target);
   // cool fill/rim from the opposite side to round out the voxel forms (no shadow)
-  const fill=new THREE.DirectionalLight(0xbcd0ff,0.22); fill.position.set(-40,34,-30); scene.add(fill);
+  const fill=new THREE.DirectionalLight(0xccdaff,0.26); fill.position.set(-40,34,-30); scene.add(fill);
 
   buildIslandBody();
   buildBackdrop();
@@ -347,10 +348,10 @@ function initThree(){
 function makeSkyTexture(){
   const c=document.createElement('canvas'); c.width=8; c.height=256; const g=c.getContext('2d');
   const grd=g.createLinearGradient(0,0,0,256);
-  grd.addColorStop(0.00,'#c6b0e6');   // top: twilight lavender
-  grd.addColorStop(0.42,'#eccfe6');   // mid: soft pink
-  grd.addColorStop(0.78,'#ffe0e0');   // rose
-  grd.addColorStop(1.00,'#ffeede');   // bottom: warm peach haze
+  grd.addColorStop(0.00,'#bcd6ef');   // top: pale sky blue
+  grd.addColorStop(0.45,'#dbe8f5');   // soft blue-white
+  grd.addColorStop(0.80,'#eef2f6');   // hazy white
+  grd.addColorStop(1.00,'#fbf3ec');   // bottom: faint warm haze
   g.fillStyle=grd; g.fillRect(0,0,8,256);
   const t=new THREE.CanvasTexture(c); return t;
 }
@@ -364,9 +365,9 @@ function buildBackdrop(){
   backdrop=new THREE.Group(); scene.add(backdrop);   // world-space; repositioned each frame onto the horizon
   // tiered voxel mountain silhouettes standing on the ground far ahead (fog turns them misty)
   const tiers=[
-    { z:-10, color:0x8f74bf, peak:[13,22], from:-120, to:120, gap:16 },   // darkest/back
-    { z:-5,  color:0xa88ecf, peak:[9,15],  from:-114, to:120, gap:13 },
-    { z:0,   color:0xc0a9df, peak:[6,11],  from:-110, to:116, gap:11 },    // lightest/front
+    { z:-10, color:0xcfc6e2, peak:[13,22], from:-120, to:120, gap:16 },   // pale misty lavender (back)
+    { z:-5,  color:0xd8d2ea, peak:[9,15],  from:-114, to:120, gap:13 },
+    { z:0,   color:0xe3def0, peak:[6,11],  from:-110, to:116, gap:11 },    // lightest/front
   ];
   tiers.forEach((t,ti)=>{ let seed=ti*13.7+2;
     for(let x=t.from; x<=t.to; x+=t.gap){ seed+=1; const r=Math.abs(Math.sin(seed*91.3));
@@ -609,10 +610,29 @@ function vxEagle(g){ const body=box(1,0.6,1.4,0xb79a86); g.add(body);
   const wr=box(1.6,0.15,1,0xcbb6a2); wr.position.set(1.2,0,0); g.add(wr);
   g.userData.wl=wl; g.userData.wr=wr; }
 
+/* -------------------- Clean voxel playfield trees/rocks (3D_map.png style) --------------------
+   Twisted brown trunk + layered pastel canopy (green pine OR pink cherry blossom). */
+function voxTreeObstacle(){ const g=new THREE.Group();
+  const trunkCol=0x6e4a2e, th=1.2+Math.random()*0.5;
+  const trunk=box(0.5,th,0.5,trunkCol); trunk.position.y=th/2; g.add(trunk);
+  const br=box(0.28,0.55,0.28,trunkCol); br.position.set(0.22,th*0.72,0); br.rotation.z=-0.5; g.add(br);
+  const cherry=Math.random()<0.20;
+  const pal=cherry?[0xf7b8d4,0xf1a2c6,0xffcfe2]
+    : (Math.random()<0.5?[0x86c96e,0x6fbc5b,0x97d484]:[0x7cc47e,0x66b568,0x8ccf8e]);
+  const y0=th+0.1;
+  [[2.05,0.80,y0],[1.55,0.68,y0+0.56],[1.05,0.58,y0+1.08]].forEach((c,i)=>{
+    const cb=box(c[0],c[1],c[0],pal[i%3]); cb.position.y=c[2]; g.add(cb); });
+  if(cherry){ const p=box(0.3,0.22,0.3,0xffdcea); p.position.set(0.6,th+0.02,0.42); g.add(p); }
+  return g; }
+function voxRockObstacle(){ const g=new THREE.Group();
+  const r1=box(0.95,0.7,0.95,0xd0d1dd); r1.position.y=0.35; g.add(r1);
+  const r2=box(0.55,0.45,0.55,0xdedfe9); r2.position.set(0.18,0.72,0.1); g.add(r2);
+  const r3=box(0.34,0.3,0.34,0xc5c6d5); r3.position.set(-0.25,0.5,-0.15); g.add(r3);
+  return g; }
 /* -------------------- Public builders (image billboard + fallback) --------------------
    First arg is a FIXED WIDTH (grid units); height = width / aspect (never squished). */
-function buildTree(){ return makeBillboard('tree',SIZE.tree,{fallback:vxTree}); }
-function buildRock(){ return makeBillboard('rock',SIZE.rock,{fallback:vxRock}); }
+function buildTree(){ return voxTreeObstacle(); }
+function buildRock(){ return voxRockObstacle(); }
 function buildPalanquin(){ return makeBillboard('palanquin',SIZE.palanquin,{fallback:vxPalanquin}); }
 function buildGuard(){ return makeBillboard('guard',SIZE.guard,{maxH:1.35,fallback:vxGuard}); }  // chibi: only a bit taller than the cat
 function buildTurtle(){ return makeBillboard('turtle',SIZE.turtle,{fallback:vxTurtle}); }
@@ -796,28 +816,33 @@ function updateWillo(){
 let lanes={}; let feverActive=false;
 function rowRand(row,salt){ let x=Math.sin(row*127.1+(salt||0)*311.7)*43758.5453; return x-Math.floor(x); }
 function laneColor(type,row){
-  if(type==='grass') return (row%2===0)?0x9edd93:0x8fd384;   // soft warm green
+  if(type==='grass') return (row%2===0)?0xbfe39c:0xb2dc8f;   // soft leaf-green meadow (3D_map)
   if(type==='road')  return (row%2===0)?0xf1e7d3:0xe6dcc6;   // pale stone paving (3D_map tone)
-  if(type==='water') return 0x8fcdf0;                        // pale pastel stream
-  return 0x9edd93;
+  if(type==='water') return 0xbfe6f2;                        // pale pastel stream
+  return 0xd7edc2;
 }
-/* -------------------- Paved-stone street texture (3D_map.png) -------------------- */
-// One repeating stone paver (bevel + joint); shared across road lanes, tinted per parity
-// so the street reads as a checkerboard of pastel flagstones.
-let _pavedTex=null;
-function getPavedTex(){ if(_pavedTex) return _pavedTex;
-  const c=document.createElement('canvas'); c.width=64; c.height=64; const g=c.getContext('2d');
-  g.fillStyle='#d8cdb6'; g.fillRect(0,0,64,64);                 // joint colour
-  g.fillStyle='#f2ebda'; g.fillRect(2,2,60,60);                 // flagstone face
-  g.fillStyle='rgba(255,255,255,.5)'; g.fillRect(2,2,60,4);     // top bevel highlight
-  g.fillStyle='rgba(120,108,92,.18)'; g.fillRect(2,56,60,6);    // bottom bevel shade
-  for(let i=0;i<26;i++){ g.fillStyle='rgba(150,140,120,.14)'; g.fillRect((Math.random()*60+2)|0,(Math.random()*60+2)|0,2,2); }
-  _pavedTex=new THREE.CanvasTexture(c); _pavedTex.wrapS=_pavedTex.wrapT=THREE.RepeatWrapping;
-  _pavedTex.magFilter=THREE.NearestFilter; _pavedTex.repeat.set(2*RENDER_HALF+1,1); return _pavedTex;
+/* -------------------- Pastel checkered paving (3D_map.png plaza tiles) -------------------- */
+// A 4x4 grid of soft pastel flagstones (cream / pink / blue / green) with light joints.
+// Road lanes clone this with a per-row offset so the checkerboard flows seamlessly across
+// the whole street (1 tile = 1 grid cell).
+let _pavedBase=null;
+function getPavedBase(){ if(_pavedBase) return _pavedBase;
+  const N=4, px=48, c=document.createElement('canvas'); c.width=c.height=N*px; const g=c.getContext('2d');
+  for(let yy=0;yy<N;yy++)for(let xx=0;xx<N;xx++){
+    const r=(xx*7+yy*13)%10; let col;
+    if(r<4) col='#ece0c6'; else if(r<6) col='#f2cdd8'; else if(r<8) col='#cfe0ef'; else col='#d6e8c6';
+    g.fillStyle='#cbbea3'; g.fillRect(xx*px,yy*px,px,px);                 // joint
+    g.fillStyle=col; g.fillRect(xx*px+2,yy*px+2,px-4,px-4);               // tile face
+    g.fillStyle='rgba(255,255,255,.45)'; g.fillRect(xx*px+2,yy*px+2,px-4,3);   // top bevel
+    g.fillStyle='rgba(120,108,92,.14)'; g.fillRect(xx*px+2,yy*px+px-5,px-4,3); // bottom shade
+  }
+  _pavedBase=c; return c;
 }
 const _pavedMat={};
-function pavedMat(row){ const k=row&1; if(_pavedMat[k]) return _pavedMat[k];
-  _pavedMat[k]=new THREE.MeshLambertMaterial({ map:getPavedTex(), color: k?0xf1e7d3:0xe6dcc6 }); return _pavedMat[k]; }
+function pavedMat(row){ const k=((row%4)+4)%4; if(_pavedMat[k]) return _pavedMat[k];
+  const t=new THREE.CanvasTexture(getPavedBase()); t.wrapS=t.wrapT=THREE.RepeatWrapping;
+  t.magFilter=THREE.NearestFilter; t.repeat.set((2*RENDER_HALF+1)/4, 1/4); t.offset.set(0, k/4);
+  _pavedMat[k]=new THREE.MeshLambertMaterial({ map:t, color:0xffffff }); return _pavedMat[k]; }
 function makeLane(row){
   const g=new THREE.Group(); g.position.z=-row*TILE;
   let type;
@@ -838,7 +863,7 @@ function makeLane(row){
   } else {
     // single ground strip per lane (perf: 1 mesh instead of ~33 with the wide map)
     const t=box(2*RENDER_HALF+1,0.5,1,baseColor,{noShadow:true}); t.receiveShadow=true; t.position.set(0,-0.25,0);
-    if(type==='road') t.material=pavedMat(row);   // paved stone street (3D_map.png)
+    if(type==='road'){ t.material=pavedMat(row); lane.baseColor=0xffffff; }   // pastel checker paving (3D_map.png)
     g.add(t); lane.tiles.push(t);
   }
   if(type==='gate'){ const gate=buildGate(); g.add(gate); lane.gateGroup=gate; }
