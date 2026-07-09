@@ -1,0 +1,82 @@
+{
+  "cat.png": {
+    "w": 490,
+    "h": 496,
+    "src": "3D_main character.jpg"
+  },
+  "fish.png": {
+    "w": 498,
+    "h": 498,
+    "src": "3D_붕어빵.jpg"
+  },
+  "churu.png": {
+    "w": 490,
+    "h": 476,
+    "src": "3D_소떡.jpg"
+  },
+  "building1.png": {
+    "w": 495,
+    "h": 483,
+    "src": "3D_gama01.jpg"
+  },
+  "building2.png": {
+    "w": 491,
+    "h": 495,
+    "src": "3D_gama02.jpg"
+  },
+  "building3.png": {
+    "w": 495,
+    "h": 485,
+    "src": "3D_gama03.jpg"
+  },
+  "building4.png": {
+    "w": 491,
+    "h": 495,
+    "src": "3D_gama04.jpg"
+  },
+  "tree_neon.png": {
+    "w": 488,
+    "h": 476,
+    "src": "3D_tree01.jpg"
+  },
+  "tree_autumn.png": {
+    "w": 474,
+    "h": 497,
+    "src": "3D_tree02.jpg"
+  },
+  "tree_blossom.png": {
+    "w": 499,
+    "h": 493,
+    "src": "3D_tree04.jpg"
+  },
+  "rock1.png": {
+    "w": 483,
+    "h": 491,
+    "src": "3D_rock01.jpg"
+  },
+  "rock2.png": {
+    "w": 489,
+    "h": 495,
+    "src": "3D_rock02.jpg"
+  },
+  "ghost1.png": {
+    "w": 480,
+    "h": 498,
+    "src": "3D_ghost.jpg"
+  },
+  "eagle.png": {
+    "w": 498,
+    "h": 490,
+    "src": "3D_eagle.jpg"
+  },
+  "turtle1.png": {
+    "w": 496,
+    "h": 488,
+    "src": "3D_turtle01.jpg"
+  },
+  "bg_far.png": {
+    "w": 1376,
+    "h": 768,
+    "src": "3D_map.png"
+  }
+}
