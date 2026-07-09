@@ -933,23 +933,24 @@ function drawBuildings(){
 // Đường phố neon ướt = ranh giới chết
 function drawStreet(){
   const y = Math.round(sy(STREET_Y));
-  ctx.fillStyle = '#0c0b1e'; ctx.fillRect(0, y, W, H-y+4);
-  ctx.fillStyle = '#2a2550'; ctx.fillRect(0, y, W, 3);
-  ctx.fillStyle = 'rgba(95,230,255,.55)'; ctx.fillRect(0, y, W, 1);   // gờ sáng
-  // vệt phản chiếu neon dọc
-  const cols=['rgba(95,230,255,.10)','rgba(255,110,199,.10)','rgba(255,211,110,.10)'];
+  // Đường đá/đất ấm ban ngày (hợp panorama làng) = ranh giới chết
+  ctx.fillStyle = '#6b503a'; ctx.fillRect(0, y, W, H-y+4);            // mặt đường nâu ấm
+  ctx.fillStyle = '#8a6b4a'; ctx.fillRect(0, y, W, 3);               // gờ trên
+  ctx.fillStyle = 'rgba(255,150,90,.75)'; ctx.fillRect(0, y, W, 1);  // viền cảnh báo (đỏ cam)
+  // rãnh lát đá dọc (thay vệt phản chiếu neon)
   const roff = Math.floor(cameraX*0.5);
-  for (let i=0;i<8;i++){ const cx=((i*140-roff)%(W+140)+(W+140))%(W+140)-70;
-    ctx.fillStyle=cols[i%3]; ctx.fillRect(Math.round(cx), y+3, 22, H-y); }
-  // vạch kẻ đường (nét đứt vàng)
-  ctx.fillStyle = '#e0b84a';
+  ctx.fillStyle = 'rgba(0,0,0,.12)';
+  for (let i=0;i<10;i++){ const cx=((i*88-roff)%(W+88)+(W+88))%(W+88)-44;
+    ctx.fillRect(Math.round(cx), y+3, 2, H-y); }
+  // vạch lát giữa đường (đá sáng, nét đứt nhẹ)
+  ctx.fillStyle = 'rgba(214,192,150,.55)';
   const doff = Math.floor(cameraX*0.6) % 40;
-  for (let x=-doff; x<W; x+=40) ctx.fillRect(Math.round(x), y+20, 18, 3);
-  // xe pixel chạy
-  const carCols=['#ff6ec7','#5fe6ff','#ffd36e','#b98cff'];
+  for (let x=-doff; x<W; x+=40) ctx.fillRect(Math.round(x), y+20, 14, 3);
+  // "traffic" = xe đẩy tông gỗ ấm (thay xe neon)
+  const carCols=['#b5643c','#8a5a3a','#c98a4e','#a06a44'];
   const coff = Math.floor(cameraX*0.6);
   for (let i=0;i<6;i++){ const cx=((i*170-coff)%(W+220)+(W+220))%(W+220)-110;
-    blit(SPR_CAR, {H:carCols[i%4], w:'#bfe6ff', K:'#100e20'}, Math.round(cx), y+16, 2); }
+    blit(SPR_CAR, {H:carCols[i%4], w:'#f0dcc0', K:'#3a2418'}, Math.round(cx), y+16, 2); }
 }
 
 // Đèn lồng = điểm móc; mỗi loại có màu hào quang & hình riêng.
@@ -999,12 +1000,12 @@ function drawTrampolines(){
   for (const t of trampolines){
     const cx = sx(t.x); if (cx+t.w < 0 || cx-t.w > W) continue;
     const x0 = Math.round(cx-t.w/2), y0 = Math.round(sy(t.y)), w = Math.round(t.w);
-    ctx.fillStyle = '#3a2f5a'; ctx.fillRect(x0-2, y0-6, 3, 16); ctx.fillRect(x0+w-1, y0-6, 3, 16);
-    const stripes=['#5fe6ff','#ffffff','#ff6ec7'];
+    ctx.fillStyle = '#6b4a2f'; ctx.fillRect(x0-2, y0-6, 3, 16); ctx.fillRect(x0+w-1, y0-6, 3, 16); // cọc gỗ
+    const stripes=['#c0392b','#f5e6c8','#2e7d5b'];   // vải Hàn: đỏ · kem · lục
     for (let i=0;i<w;i+=4){
       const sag = Math.round(Math.sin(Math.PI*(i/w))*7);
       ctx.fillStyle = stripes[((i/4)|0)%3]; ctx.fillRect(x0+i, y0+sag, 4, 4);
-      ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.fillRect(x0+i, y0+sag, 4, 1);
+      ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.fillRect(x0+i, y0+sag, 4, 1);
     }
   }
 }
